@@ -10,6 +10,7 @@ import AppsButton from "./AppsButton";
 
 // import { FILE_BASE_URL } from '@/config/serverApiConfig';
 import useLanguage from "@/locale/useLanguage";
+import LanguageSwitcher from "../../components/LanguageSwitcher";
 
 export default function HeaderContent() {
   //   const currentAdmin = useSelector(selectCurrentAdmin);
@@ -135,6 +136,7 @@ export default function HeaderContent() {
         {/* </Badge> */}
       </Dropdown>
       <AppsButton />
+      <LanguageSwitcher/>
     </Header>
   );
 }
