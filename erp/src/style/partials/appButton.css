@@ -2,18 +2,50 @@
   width: 31rem;
   height: 12rem;
   border-radius: 8px;
-  background-color:;
-  /* box-shadow:
+  background-color: #ffffff;
+  box-shadow:
     rgba(0, 0, 0, 0.25) 0px 54px 55px,
     rgba(0, 0, 0, 0.12) 0px -12px 30px,
     rgba(0, 0, 0, 0.12) 0px 4px 6px,
     rgba(0, 0, 0, 0.17) 0px 12px 13px,
-    rgba(0, 0, 0, 0.09) 0px -3px 5px; */
+    rgba(0, 0, 0, 0.09) 0px -3px 5px;
+  padding: 1rem;
 }
+
 .dropDownDisplay {
   display: flex;
-  justify-items: center;
+  justify-content: flex-start; /* Align items to the start (left) */
   align-items: center;
   gap: 1rem;
   flex-wrap: wrap;
+}
+
+.box {
+  width: 80px; /* Smaller width for the boxes */
+  height: 80px; /* Smaller height for the boxes */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background-color: #fafafa; /* Lighter background color */
+  border-radius: 8px; /* Rounded corners */
+  box-shadow: rgba(0, 0, 0, 0.1) 0px 4px 12px; /* Subtle shadow */
+  cursor: pointer; /* Pointer cursor on hover */
+  transition: background-color 0.3s ease; /* Smooth transition */
+}
+
+.box:hover {
+  background-color: #f0f0f0; /* Slightly darker background on hover */
+}
+
+.boxIcon {
+  font-size: 24px; /* Smaller icon size */
+  color: #1890ff; /* Icon color */
+}
+
+.boxLabel {
+  margin-top: 8px; /* Space between icon and label */
+  font-size: 12px; /* Smaller label font size */
+  color: #333; /* Label color */
+  text-align: center; /* Center-align text */
 }

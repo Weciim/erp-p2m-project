@@ -1,8 +1,8 @@
-import * as actionTypes from './types';
+import * as actionTypes from "./types";
 
 export const initialState = {
   isNavMenuClose: false,
-  currentApp: 'default',
+  currentApp: "erp",
 };
 
 export function contextReducer(state, action) {
@@ -25,12 +25,12 @@ export function contextReducer(state, action) {
     case actionTypes.CHANGE_APP:
       return {
         ...state,
-        currentApp: action.playload,
+        currentApp: action.payload,
       };
     case actionTypes.DEFAULT_APP:
       return {
         ...state,
-        currentApp: 'default',
+        currentApp: "erp",
       };
 
     default: {
