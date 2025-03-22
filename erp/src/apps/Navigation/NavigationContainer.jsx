@@ -21,6 +21,7 @@ import {
   ShopOutlined,
   WalletOutlined,
   ReconciliationOutlined,
+  DollarOutlined,
 } from "@ant-design/icons";
 
 const { Sider } = Layout;
@@ -43,7 +44,7 @@ function Sidebar({ collapsible, isMobile = false }) {
   const translate = useLanguage();
   const navigate = useNavigate();
 
-  const items = [
+  const erpItems = [
     {
       key: "dashboard",
       icon: <DashboardOutlined />,
@@ -86,9 +87,14 @@ function Sidebar({ collapsible, isMobile = false }) {
       label: <Link to={"/settings"}>{translate("settings")}</Link>,
       icon: <SettingOutlined />,
     },
-  
   ];
-
+  const inventoryItems = [
+    {
+      key: "purchase",
+      label: <Link to={"/purchase"}>{translate("purchase")}</Link>,
+      icon: <DollarOutlined />,
+    },
+  ];
   useEffect(() => {
     if (location)
       if (currentPath !== location.pathname) {
@@ -162,7 +168,7 @@ function Sidebar({ collapsible, isMobile = false }) {
         )}
       </div>
       <Menu
-        items={items}
+        items={eval(stateApp.currentApp + "Items")}
         mode="inline"
         selectedKeys={[currentPath]}
         style={{

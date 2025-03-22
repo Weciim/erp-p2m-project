@@ -24,7 +24,7 @@ export default function InventoryApp() {
               maxWidth: "none",
             }}
           >
-            <h1>hello</h1>
+              <AppRouter />
           </Content>
         </Layout>
       ) : (
@@ -39,7 +39,7 @@ export default function InventoryApp() {
               maxWidth: 1400,
             }}
           >
-            <h1>hello</h1>
+              <AppRouter />
           </Content>
         </Layout>
       )}

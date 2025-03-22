@@ -7,6 +7,12 @@
   },
   {
     "settingCategory": "finance_settings",
+    "settingKey": "last_inventory_number",
+    "settingValue": 0,
+    "valueType": "number"
+  },
+  {
+    "settingCategory": "finance_settings",
     "settingKey": "last_quote_number",
     "settingValue": 0,
     "valueType": "number"

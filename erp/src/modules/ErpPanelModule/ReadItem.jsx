@@ -246,15 +246,19 @@ export default function ReadItem({ config, selectedItem }) {
         </Row>
       </PageHeader>
       <Divider dashed />
-      <Descriptions title={`Client : ${currentErp.client.name}`}>
+      <Descriptions
+        title={`${currentErp.supplier ? "Supplier" : "Client"} : ${
+          currentErp.client?.name || currentErp.supplier.name
+        }`}
+      >
         <Descriptions.Item label={translate("Address")}>
-          {client.address}
+          {client.address || currentErp.supplier?.address}
         </Descriptions.Item>
         <Descriptions.Item label={translate("email")}>
-          {client.email}
+          {client.email || currentErp.supplier?.email}
         </Descriptions.Item>
         <Descriptions.Item label={translate("Phone")}>
-          {client.phone}
+          {client.phone || currentErp.supplier?.phone}
         </Descriptions.Item>
       </Descriptions>
       <Divider />
