@@ -27,6 +27,11 @@ const Settings = lazy(() => import("@/pages/Settings/Settings"));
 const Purchase = lazy(() => import("@/pages/Purchase"));
 const PurchaseCreate = lazy(() => import("@/pages/Purchase/PurchaseCreate"));
 const PurchaseRead = lazy(() => import("@/pages/Purchase/PurchaseRead"));
+const PurchaseUpdate = lazy(() => import("@/pages/Purchase/PurchaseUpdate"));
+const Sale = lazy(() => import("@/pages/Sale"));
+const SaleCreate = lazy(() => import("@/pages/Sale/SaleCreate"));
+const SaleRead = lazy(() => import("@/pages/Sale/SaleRead"));
+const SaleUpdate = lazy(() => import("@/pages/Sale/SaleUpdate"));
 
 let routes = {
   expense: [],
@@ -132,11 +137,26 @@ let routes = {
       path: "/purchase/read/:id",
       element: <PurchaseRead />,
     },
-    // {
-    //   path: "/purchase/update/:id",
-    //   element: <PurchaseUpdate />,
-    // },
-  
+    {
+      path: "/purchase/update/:id",
+      element: <PurchaseUpdate />,
+    },
+    {
+      path: "/sale",
+      element: <Sale />,
+    },
+    {
+      path: "/sale/create",
+      element: <SaleCreate />,
+    },
+    {
+      path: "/sale/read/:id",
+      element: <SaleRead />,
+    },
+    {
+      path: "/sale/update/:id",
+      element: <SaleUpdate />,
+    },
   ],
 };
 
