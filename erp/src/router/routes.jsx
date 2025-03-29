@@ -32,6 +32,9 @@ const Sale = lazy(() => import("@/pages/Sale"));
 const SaleCreate = lazy(() => import("@/pages/Sale/SaleCreate"));
 const SaleRead = lazy(() => import("@/pages/Sale/SaleRead"));
 const SaleUpdate = lazy(() => import("@/pages/Sale/SaleUpdate"));
+const Items = lazy(() => import("@/pages/Items"));
+const ItemsCreate = lazy(() => import("@/pages/Items/ItemsCreate"));
+const Categories = lazy(() => import("@/pages/Categories/"));
 
 let routes = {
   expense: [],
@@ -156,6 +159,26 @@ let routes = {
     {
       path: "/sale/update/:id",
       element: <SaleUpdate />,
+    },
+    {
+      path: "/items",
+      element: <Items />,
+    },
+    {
+      path: "/items/create",
+      element: <ItemsCreate />,
+    },
+    // {
+    //   path: "/items/read/:id",
+    //   element: <ItemsRead />,
+    // },
+    // {
+    //   path: "/items/update/:id",
+    //   element: <ItemsUpdate />,
+    // },
+    {
+      path: "/categories",
+      element: <Categories />,
     },
   ],
 };

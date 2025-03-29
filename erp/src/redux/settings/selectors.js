@@ -10,6 +10,10 @@ export const selectMoneyFormat = createSelector(
   [selectCurrentSettings],
   (settings) => settings.money_format_settings || {}
 );
+export const selectItemNumber = createSelector(
+  [selectCurrentSettings],
+  (settings) => settings.last_item_number || {}
+);
 
 export const selectAppSettings = createSelector(
   [selectCurrentSettings],

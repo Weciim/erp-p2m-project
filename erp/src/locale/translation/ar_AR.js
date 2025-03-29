@@ -303,6 +303,7 @@ const ar_AR = {
     company_reg_number: "رقم تسجيل الشركة",
     update_company_logo: "تحديث شعار الشركة",
     money_format_settings: "إعدادات تنسيق الأموال",
+    last_item_number: "اخر رقم بضاعة",
     default_currency: "العملة الافتراضية",
     select_default_currency: "اختر العملة الافتراضية",
     update_company_finance_settings: "تحديث الإعدادات المالية للشركة",

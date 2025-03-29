@@ -22,6 +22,7 @@ import {
   WalletOutlined,
   ReconciliationOutlined,
   DollarOutlined,
+  ShoppingCartOutlined,
 } from "@ant-design/icons";
 
 const { Sider } = Layout;
@@ -93,6 +94,11 @@ function Sidebar({ collapsible, isMobile = false }) {
       key: "purchase",
       label: <Link to={"/purchase"}>{translate("purchase")}</Link>,
       icon: <DollarOutlined />,
+    },
+    {
+      key: "sales",
+      label: <Link to={"/sale"}>{translate("sales")}</Link>,
+      icon: <ShoppingCartOutlined />,
     },
   ];
   useEffect(() => {

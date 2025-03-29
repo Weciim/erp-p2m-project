@@ -307,6 +307,7 @@ const fr_FR = {
   company_reg_number: "Numéro d'enregistrement de l'entreprise",
   update_company_logo: "Mettre à jour le logo de l'entreprise",
   money_format_settings: "Paramètres de format d'argent",
+  last_item_number: "Dernier numero d'objet",
   default_currency: "Devise par défaut",
   select_default_currency: "Sélectionnez la devise par défaut",
   update_company_finance_settings:

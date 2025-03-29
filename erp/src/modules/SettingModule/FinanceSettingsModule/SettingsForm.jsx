@@ -18,6 +18,11 @@ const formItems = [
     settingKey: 'last_payment_number',
     valueType: 'number',
   },
+  {
+    label: 'last_item_number',
+    settingKey: 'last_item_number',
+    valueType: 'number',
+  },
 ];
 
 export default function SettingForm() {
