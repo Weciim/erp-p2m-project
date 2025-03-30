@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 const Model = mongoose.model('Items');
-const { calculate } = require('@/helpers');
 const { increaseBySettingKey } = require('@/middlewares/settings');
 const schema = require('./schemaValidate');
 
@@ -17,46 +16,23 @@ const create = async (req, res) => {
     });
   }
 
-  const { items = [], taxRate = 0, discount = 0 } = value;
-  let subTotal = 0;
-  let taxTotal = 0;
-  let total = 0;
+  // Set createdBy to current admin
+  value.createdBy = req.admin._id;
 
-  const updatedItems = items.map((item) => {
-    const itemTotal = calculate.multiply(item.quantity, item.price);
-    subTotal = calculate.add(subTotal, itemTotal);
-    return {
-      ...item,
-      total: itemTotal,
-    };
-  });
+  // Generate code if not provided
+  if (!value.code) {
+    const { last_item_number } = await increaseBySettingKey({
+      settingKey: 'last_item_number',
+    });
+    value.code = `ITM-${(last_item_number + 1).toString().padStart(4, '0')}`;
+  }
 
-  taxTotal = calculate.multiply(subTotal, taxRate / 100);
-  total = calculate.add(subTotal, taxTotal);
-
-  let paymentStatus = calculate.sub(total, discount) === 0 ? 'paid' : 'unpaid';
-
-  body = {
-    ...value,
-    items: updatedItems,
-    paymentStatus,
-    createdBy: req.admin._id,
-    subTotal,
-    taxTotal,
-    total,
-  };
-
-  const result = await new Model(body).save();
-
-  const updateResult = await Model.findOneAndUpdate({ _id: result._id }, { new: true }).exec();
-
-  increaseBySettingKey({
-    settingKey: 'last_item_number',
-  });
+  // Create new item
+  const result = await new Model(value).save();
 
   return res.status(200).json({
     success: true,
-    result: updateResult,
+    result,
     message: 'Item created successfully',
   });
 };

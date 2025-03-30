@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import {
-  Form,
   Input,
   InputNumber,
   Button,
@@ -11,26 +10,40 @@ import {
   Switch,
   Upload,
   message,
+  Form,
 } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import AutoCompleteAsync from "@/components/AutoCompleteAsync";
 import SelectAsync from "@/components/SelectAsync";
 import useLanguage from "@/locale/useLanguage";
 import { useMoney } from "@/settings";
-import { selectItemNumber } from "@/redux/settings/selectors";
+import { selectFinanceSettings } from "@/redux/settings/selectors";
 import { useSelector } from "react-redux";
 
 const { Option } = Select;
 const { TextArea } = Input;
 
-export default function ItemForm({ current = null }) {
+export default function ItemsForm({ current = null }) {
   const translate = useLanguage();
-  const { moneyFormatter } = useMoney();
-  const { last_item_number } = useSelector(selectItemNumber);
-  const [form] = Form.useForm();
+  const moneyUtils = useMoney();
+  const { last_item_number } = useSelector(selectFinanceSettings);
   const [inventoryEnabled, setInventoryEnabled] = useState(false);
   const [isDigital, setIsDigital] = useState(false);
   const [fileList, setFileList] = useState([]);
+  const form = Form.useFormInstance();
+
+  const moneyParser = (value) => {
+    if (!value) return 0;
+    if (typeof value === 'number') return value;
+    const parsed = value.toString().replace(/[^0-9.-]/g, '');
+    return parsed ? Number(parsed) : 0;
+  };
+
+  const moneyFormatter = (value) => {
+    return moneyUtils?.moneyFormatter 
+      ? moneyUtils.moneyFormatter({ amount: value || 0 })
+      : value?.toLocaleString() || '0';
+  };
 
   useEffect(() => {
     if (current) {
@@ -39,6 +52,8 @@ export default function ItemForm({ current = null }) {
         category: current.category?._id,
         taxRate: current.taxRate?._id,
         supplier: current.supplier?._id,
+        costPrice: current.costPrice || 0,
+        salePrice: current.salePrice || 0,
       });
       setInventoryEnabled(current.inventoryEnabled || false);
       setIsDigital(current.isDigital || false);
@@ -59,6 +74,8 @@ export default function ItemForm({ current = null }) {
         unit: "piece",
         inventoryEnabled: false,
         lowStockThreshold: 5,
+        costPrice: 0,
+        salePrice: 0,
       });
     }
   }, [current, form, last_item_number]);
@@ -75,6 +92,14 @@ export default function ItemForm({ current = null }) {
 
   const handleUploadChange = ({ fileList: newFileList }) => {
     setFileList(newFileList);
+    form.setFieldsValue({
+      images: newFileList.map((file) => ({
+        id: file.uid,
+        name: file.name,
+        path: file.url || file.thumbUrl,
+        description: file.description || "",
+      })),
+    });
   };
 
   const beforeUpload = (file) => {
@@ -85,24 +110,10 @@ export default function ItemForm({ current = null }) {
     return isImage;
   };
 
-  const onFinish = (values) => {
-    const formData = {
-      ...values,
-      images: fileList.map((file) => ({
-        id: file.uid,
-        name: file.name,
-        path: file.url || file.thumbUrl,
-        description: file.description || "",
-      })),
-    };
-    console.log("Form Data:", formData);
-    // Submit to your API here
-  };
-
   return (
-    <Form form={form} onFinish={onFinish} layout="vertical">
+    <>
       <Row gutter={[16, 0]}>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item
             name="name"
             label={translate("Name")}
@@ -111,7 +122,7 @@ export default function ItemForm({ current = null }) {
             <Input />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item
             name="code"
             label={translate("Code")}
@@ -120,20 +131,24 @@ export default function ItemForm({ current = null }) {
             <Input disabled={!!current} />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item name="barcode" label={translate("Barcode")}>
             <Input />
           </Form.Item>
         </Col>
       </Row>
 
-      <Form.Item name="description" label={translate("Description")}>
-        <TextArea rows={3} />
-      </Form.Item>
+      <Row gutter={[16, 0]}>
+        <Col className="gutter-row" span={24}>
+          <Form.Item name="description" label={translate("Description")}>
+            <TextArea rows={3} />
+          </Form.Item>
+        </Col>
+      </Row>
 
       <Divider orientation="left">{translate("Classification")}</Divider>
       <Row gutter={[16, 0]}>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item
             name="type"
             label={translate("Type")}
@@ -147,7 +162,7 @@ export default function ItemForm({ current = null }) {
             </Select>
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item name="category" label={translate("Category")}>
             <SelectAsync
               entity="category"
@@ -159,7 +174,7 @@ export default function ItemForm({ current = null }) {
             />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item name="unit" label={translate("Unit")}>
             <Select>
               <Option value="piece">{translate("Piece")}</Option>
@@ -175,16 +190,17 @@ export default function ItemForm({ current = null }) {
 
       <Divider orientation="left">{translate("Pricing")}</Divider>
       <Row gutter={[16, 0]}>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item name="costPrice" label={translate("Cost Price")}>
             <InputNumber
               style={{ width: "100%" }}
-              formatter={(value) => moneyFormatter(value)}
-              parser={(value) => value.replace(/[^\d.]/g, "")}
+              min={0}
+              formatter={moneyFormatter}
+              parser={moneyParser}
             />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item
             name="salePrice"
             label={translate("Sale Price")}
@@ -192,12 +208,13 @@ export default function ItemForm({ current = null }) {
           >
             <InputNumber
               style={{ width: "100%" }}
-              formatter={(value) => moneyFormatter(value)}
-              parser={(value) => value.replace(/[^\d.]/g, "")}
+              min={0}
+              formatter={moneyFormatter}
+              parser={moneyParser}
             />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item name="taxRate" label={translate("Tax Rate")}>
             <SelectAsync
               entity="taxes"
@@ -213,23 +230,23 @@ export default function ItemForm({ current = null }) {
 
       <Divider orientation="left">{translate("Inventory")}</Divider>
       <Row gutter={[16, 0]}>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item
             name="inventoryEnabled"
             label={translate("Track Inventory")}
             valuePropName="checked"
           >
-            <Switch onChange={handleInventoryToggle} />
+            <Switch onChange={handleInventoryToggle} checked={inventoryEnabled} />
           </Form.Item>
         </Col>
         {inventoryEnabled && (
           <>
-            <Col span={8}>
+            <Col className="gutter-row" span={8}>
               <Form.Item name="quantity" label={translate("Quantity")}>
                 <InputNumber style={{ width: "100%" }} min={0} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col className="gutter-row" span={8}>
               <Form.Item
                 name="lowStockThreshold"
                 label={translate("Low Stock Threshold")}
@@ -242,30 +259,34 @@ export default function ItemForm({ current = null }) {
       </Row>
 
       <Divider orientation="left">{translate("Supplier")}</Divider>
-      <Form.Item name="supplier" label={translate("Supplier")}>
-        <AutoCompleteAsync
-          entity="client"
-          displayLabels={["name"]}
-          searchFields="name"
-          redirectLabel={translate("Add New Supplier")}
-          withRedirect
-          urlToRedirect="/suppliers"
-        />
-      </Form.Item>
+      <Row gutter={[16, 0]}>
+        <Col className="gutter-row" span={24}>
+          <Form.Item name="supplier" label={translate("Supplier")}>
+            <AutoCompleteAsync
+              entity="client"
+              displayLabels={["name"]}
+              searchFields="name"
+              redirectLabel={translate("Add New Supplier")}
+              withRedirect
+              urlToRedirect="/suppliers"
+            />
+          </Form.Item>
+        </Col>
+      </Row>
 
       <Divider orientation="left">{translate("Digital Product")}</Divider>
       <Row gutter={[16, 0]}>
-        <Col span={8}>
+        <Col className="gutter-row" span={8}>
           <Form.Item
             name="isDigital"
             label={translate("Is Digital Product")}
             valuePropName="checked"
           >
-            <Switch onChange={handleDigitalToggle} />
+            <Switch onChange={handleDigitalToggle} checked={isDigital} />
           </Form.Item>
         </Col>
         {isDigital && (
-          <Col span={16}>
+          <Col className="gutter-row" span={16}>
             <Form.Item name="downloadUrl" label={translate("Download URL")}>
               <Input />
             </Form.Item>
@@ -273,12 +294,22 @@ export default function ItemForm({ current = null }) {
         )}
       </Row>
 
-      <Divider />
-      <Form.Item>
-        <Button type="primary" htmlType="submit">
-          {translate("Save")}
-        </Button>
-      </Form.Item>
-    </Form>
+      <Divider orientation="left">{translate("Images")}</Divider>
+      <Row gutter={[16, 0]}>
+        <Col className="gutter-row" span={24}>
+          <Form.Item name="images">
+            <Upload
+              listType="picture-card"
+              fileList={fileList}
+              onChange={handleUploadChange}
+              beforeUpload={beforeUpload}
+              multiple
+            >
+              <Button icon={<UploadOutlined />}>{translate("Upload")}</Button>
+            </Upload>
+          </Form.Item>
+        </Col>
+      </Row>
+    </>
   );
 }

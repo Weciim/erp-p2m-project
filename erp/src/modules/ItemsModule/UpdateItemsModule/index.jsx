@@ -2,8 +2,7 @@ import NotFound from '@/components/NotFound';
 
 import { ErpLayout } from '@/layout';
 import UpdateItem from '@/modules/ErpPanelModule/UpdateItem';
-import SaleForm from '@/modules/ItemsModule/Forms/ItemsForm';
-
+import ItemsForm from '@/modules/ItemsModule/Forms/ItemsForm';
 import PageLoader from '@/components/PageLoader';
 
 import { erp } from '@/redux/erp/actions';
@@ -13,7 +12,6 @@ import { useLayoutEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
-import { settingsAction } from '@/redux/settings/actions';
 
 export default function UpdateInvoiceModule({ config }) {
   const dispatch = useDispatch();

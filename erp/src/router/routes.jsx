@@ -34,6 +34,8 @@ const SaleRead = lazy(() => import("@/pages/Sale/SaleRead"));
 const SaleUpdate = lazy(() => import("@/pages/Sale/SaleUpdate"));
 const Items = lazy(() => import("@/pages/Items"));
 const ItemsCreate = lazy(() => import("@/pages/Items/ItemsCreate"));
+const ItemsRead = lazy(() => import("@/pages/Items/ItemsRead"));
+const ItemsUpdate = lazy(() => import("@/pages/Items/ItemsUpdate"));
 const Categories = lazy(() => import("@/pages/Categories/"));
 
 let routes = {
@@ -168,14 +170,14 @@ let routes = {
       path: "/items/create",
       element: <ItemsCreate />,
     },
-    // {
-    //   path: "/items/read/:id",
-    //   element: <ItemsRead />,
-    // },
-    // {
-    //   path: "/items/update/:id",
-    //   element: <ItemsUpdate />,
-    // },
+    {
+      path: "/items/read/:id",
+      element: <ItemsRead />,
+    },
+    {
+      path: "/items/update/:id",
+      element: <ItemsUpdate />,
+    },
     {
       path: "/categories",
       element: <Categories />,
