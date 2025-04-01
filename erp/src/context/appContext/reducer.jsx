@@ -23,11 +23,13 @@ export function contextReducer(state, action) {
         isNavMenuClose: !state.isNavMenuClose,
       };
     case actionTypes.CHANGE_APP:
+      localStorage.setItem("currentApp", action.payload);
       return {
         ...state,
         currentApp: action.payload,
       };
     case actionTypes.DEFAULT_APP:
+      localStorage.setItem("currentApp", "erp");
       return {
         ...state,
         currentApp: "erp",

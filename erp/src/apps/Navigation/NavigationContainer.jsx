@@ -23,6 +23,7 @@ import {
   ReconciliationOutlined,
   DollarOutlined,
   ShoppingCartOutlined,
+  DropboxOutlined,
 } from "@ant-design/icons";
 
 const { Sider } = Layout;
@@ -37,7 +38,7 @@ function Sidebar({ collapsible, isMobile = false }) {
   let location = useLocation();
 
   const { state: stateApp, appContextAction } = useAppContext();
-  const { isNavMenuClose } = stateApp;
+  const { isNavMenuClose, currentApp } = stateApp;
   const { navMenu } = appContextAction;
   const [showLogoApp, setLogoApp] = useState(isNavMenuClose);
   const [currentPath, setCurrentPath] = useState(location.pathname.slice(1));
@@ -45,69 +46,85 @@ function Sidebar({ collapsible, isMobile = false }) {
   const translate = useLanguage();
   const navigate = useNavigate();
 
-  const erpItems = [
-    {
-      key: "dashboard",
-      icon: <DashboardOutlined />,
-      label: <Link to={"/"}>{translate("dashboard")}</Link>,
-    },
-    {
-      key: "customer",
-      icon: <CustomerServiceOutlined />,
-      label: <Link to={"/customer"}>{translate("customers")}</Link>,
-    },
+  const menuItems = {
+    erp: [
+      {
+        key: "dashboard",
+        icon: <DashboardOutlined />,
+        label: <Link to={"/"}>{translate("dashboard")}</Link>,
+      },
+      {
+        key: "customer",
+        icon: <CustomerServiceOutlined />,
+        label: <Link to={"/customer"}>{translate("customers")}</Link>,
+      },
+      {
+        key: "invoice",
+        icon: <ContainerOutlined />,
+        label: <Link to={"/invoice"}>{translate("invoices")}</Link>,
+      },
+      {
+        key: "quote",
+        icon: <FileSyncOutlined />,
+        label: <Link to={"/quote"}>{translate("quote")}</Link>,
+      },
+      {
+        key: "payment",
+        icon: <CreditCardOutlined />,
+        label: <Link to={"/payment"}>{translate("payments")}</Link>,
+      },
+      {
+        key: "paymentMode",
+        label: <Link to={"/payment/mode"}>{translate("payments_mode")}</Link>,
+        icon: <WalletOutlined />,
+      },
+      {
+        key: "taxes",
+        label: <Link to={"/taxes"}>{translate("taxes")}</Link>,
+        icon: <ShopOutlined />,
+      },
+      {
+        key: "generalSettings",
+        label: <Link to={"/settings"}>{translate("settings")}</Link>,
+        icon: <SettingOutlined />,
+      },
+    ],
+    inventory: [
+      {
+        key: "purchase",
+        label: <Link to={"/purchase"}>{translate("purchase")}</Link>,
+        icon: <DollarOutlined />,
+      },
+      {
+        key: "sales",
+        label: <Link to={"/sale"}>{translate("sales")}</Link>,
+        icon: <ShoppingCartOutlined />,
+      },
+      {
+        key: "items",
+        label: <Link to={"/items"}>{translate("items")}</Link>,
+        icon: <DropboxOutlined />,
+      },
+    ],
+  };
 
-    {
-      key: "invoice",
-      icon: <ContainerOutlined />,
-      label: <Link to={"/invoice"}>{translate("invoices")}</Link>,
-    },
-    {
-      key: "quote",
-      icon: <FileSyncOutlined />,
-      label: <Link to={"/quote"}>{translate("quote")}</Link>,
-    },
-    {
-      key: "payment",
-      icon: <CreditCardOutlined />,
-      label: <Link to={"/payment"}>{translate("payments")}</Link>,
-    },
-
-    {
-      key: "paymentMode",
-      label: <Link to={"/payment/mode"}>{translate("payments_mode")}</Link>,
-      icon: <WalletOutlined />,
-    },
-    {
-      key: "taxes",
-      label: <Link to={"/taxes"}>{translate("taxes")}</Link>,
-      icon: <ShopOutlined />,
-    },
-    {
-      key: "generalSettings",
-      label: <Link to={"/settings"}>{translate("settings")}</Link>,
-      icon: <SettingOutlined />,
-    },
-  ];
-  const inventoryItems = [
-    {
-      key: "purchase",
-      label: <Link to={"/purchase"}>{translate("purchase")}</Link>,
-      icon: <DollarOutlined />,
-    },
-    {
-      key: "sales",
-      label: <Link to={"/sale"}>{translate("sales")}</Link>,
-      icon: <ShoppingCartOutlined />,
-    },
-  ];
   useEffect(() => {
-    if (location)
+    const savedApp = localStorage.getItem("currentApp");
+    if (savedApp && savedApp !== currentApp) {
+      appContextAction.app.open(savedApp);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (location) {
       if (currentPath !== location.pathname) {
         if (location.pathname === "/") {
           setCurrentPath("dashboard");
-        } else setCurrentPath(location.pathname.slice(1));
+        } else {
+          setCurrentPath(location.pathname.slice(1));
+        }
       }
+    }
   }, [location, currentPath]);
 
   useEffect(() => {
@@ -121,6 +138,7 @@ function Sidebar({ collapsible, isMobile = false }) {
     }, 200);
     return () => clearTimeout(timer);
   }, [isNavMenuClose]);
+
   const onCollapse = () => {
     navMenu.collapse();
   };
@@ -135,18 +153,14 @@ function Sidebar({ collapsible, isMobile = false }) {
       style={{
         overflow: "hidden",
         height: "100vh",
-
         position: isMobile ? "absolute" : "relative",
         bottom: "20px",
         ...(!isMobile && {
-          // border: 'none',
-          ["left"]: "20px",
+          left: "20px",
           top: "20px",
-          // borderRadius: '8px',
           backgroundColor: "#f9fafc",
         }),
       }}
-      // theme={'light'}
     >
       <div
         className="logo"
@@ -174,7 +188,7 @@ function Sidebar({ collapsible, isMobile = false }) {
         )}
       </div>
       <Menu
-        items={eval(stateApp.currentApp + "Items")}
+        items={menuItems[currentApp] || menuItems.erp} 
         mode="inline"
         selectedKeys={[currentPath]}
         style={{
@@ -202,13 +216,12 @@ function MobileSidebar() {
         size="large"
         onClick={showDrawer}
         className="mobile-sidebar-btn"
-        style={{ ["marginLeft"]: 25 }}
+        style={{ marginLeft: 25 }}
       >
         <MenuOutlined style={{ fontSize: 18 }} />
       </Button>
       <Drawer
         width={250}
-        // style={{ backgroundColor: 'rgba(255, 255, 255, 1)' }}
         placement={"left"}
         closable={false}
         onClose={onClose}

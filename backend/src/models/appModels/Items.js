@@ -63,6 +63,7 @@ const itemSchema = new mongoose.Schema({
     type: Number,
     default: 5,
   },
+  
   unit: {
     type: String,
     enum: ['piece', 'kg', 'liter', 'meter', 'box', 'pack'],
@@ -72,6 +73,9 @@ const itemSchema = new mongoose.Schema({
     type: mongoose.Schema.ObjectId,
     ref: 'Client',
     autopopulate: true,
+  },
+  sold:{
+    type:Boolean
   },
   // Digital/downloadable items
   isDigital: Boolean,
@@ -102,6 +106,7 @@ const itemSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  
 });
 
 // Auto-populate taxRate and category

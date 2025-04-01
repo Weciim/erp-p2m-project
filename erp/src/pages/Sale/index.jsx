@@ -21,10 +21,7 @@ function Sale() {
       title: translate("Number"),
       dataIndex: "number",
     },
-    {
-      title: translate("sale"),
-      dataIndex: ["sale", "name"],
-    },
+ 
     {
       title: translate("Date"),
       dataIndex: "date",

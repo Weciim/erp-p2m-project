@@ -10,7 +10,7 @@ const schema = Joi.object({
   unit: Joi.string().valid('piece', 'kg', 'liter', 'meter', 'box', 'pack').default('piece'),
   costPrice: Joi.number().default(0),
   salePrice: Joi.number().required(),
-  taxRate: Joi.alternatives().try(Joi.string(), Joi.object(), Joi.number()),
+  // taxRate: Joi.alternatives().try(Joi.string(), Joi.object(), Joi.number()),
   quantity: Joi.number().default(0),
   inventoryEnabled: Joi.boolean().default(false),
   lowStockThreshold: Joi.number().default(5),

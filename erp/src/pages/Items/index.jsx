@@ -18,12 +18,12 @@ function Items() {
 
   const dataTableColumns = [
     {
-      title: translate("Number"),
-      dataIndex: "number",
+      title: translate("Code"),
+      dataIndex: "code",
     },
     {
-      title: translate("items"),
-      dataIndex: ["items", "name"],
+      title: translate("Name"),
+      dataIndex: "name",
     },
     {
       title: translate("Date"),
@@ -34,8 +34,27 @@ function Items() {
     },
 
     {
-      title: translate("Total"),
-      dataIndex: "total",
+      title: translate("Cost Price"),
+      dataIndex: "costPrice",
+      onCell: () => {
+        return {
+          style: {
+            textAlign: "right",
+            whiteSpace: "nowrap",
+            direction: "ltr",
+          },
+        };
+      },
+      render: (total, record) => {
+        return moneyFormatter({
+          amount: total,
+          currency_code: record.currency,
+        });
+      },
+    },
+    {
+      title: translate("Sale Price"),
+      dataIndex: "salePrice",
       onCell: () => {
         return {
           style: {
@@ -54,12 +73,8 @@ function Items() {
     },
 
     {
-      title: translate("Status"),
-      dataIndex: "status",
-    },
-    {
-      title: translate("Payment"),
-      dataIndex: "paymentStatus",
+      title: translate("Type"),
+      dataIndex: "type",
     },
   ];
   const Labels = {

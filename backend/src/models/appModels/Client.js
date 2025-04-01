@@ -14,6 +14,11 @@ const schema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  role: {
+    type: String,
+    enum: ['client', 'supplier'],
+    default: 'client',
+  },
   phone: String,
   country: String,
   address: String,

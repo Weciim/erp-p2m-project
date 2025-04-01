@@ -9,7 +9,15 @@ const settingSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
-
+  key: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  value: {
+    type: mongoose.Schema.Types.Mixed,
+    required: true
+  },
   settingCategory: {
     type: String,
     required: true,

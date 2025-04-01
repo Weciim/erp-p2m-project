@@ -21,10 +21,7 @@ function Purchase() {
       title: translate("Number"),
       dataIndex: "number",
     },
-    {
-      title: translate("purchase"),
-      dataIndex: ["purchase", "name"],
-    },
+  
     {
       title: translate("Date"),
       dataIndex: "date",

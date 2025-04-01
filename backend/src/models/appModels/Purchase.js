@@ -12,15 +12,12 @@ const purchaseSchema = new mongoose.Schema({
   },
   number: {
     type: Number,
-    // required: true,
   },
   year: {
     type: Number,
-    // required: true,
   },
   date: {
     type: Date,
-    // required: true,
   },
   expectedDeliveryDate: {
     type: Date,
@@ -28,7 +25,6 @@ const purchaseSchema = new mongoose.Schema({
   supplier: {
     type: mongoose.Schema.ObjectId,
     ref: 'Client',
-    // required: true,
     autopopulate: true,
   },
   purchaseOrderNumber: {
@@ -36,30 +32,53 @@ const purchaseSchema = new mongoose.Schema({
   },
   items: [
     {
-      itemName: {
-        type: String,
+      item: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Items',
         required: true,
-      },
-      description: {
-        type: String,
+        autopopulate: {
+          select: 'name code barcode description type costPrice salePrice quantity unit',
+        },
       },
       quantity: {
         type: Number,
         default: 1,
         required: true,
+        min: [1, 'Quantity must be at least 1'],
       },
-      price: {
+      costPrice: {
         type: Number,
-        required: true,
+        min: [0, 'Price cannot be negative'],
+      },
+      purchaseTaxRate: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Taxes',
+        autopopulate: true,
+      },
+      discount: {
+        type: Number,
+        default: 0,
+        min: [0, 'Discount cannot be negative'],
       },
       total: {
         type: Number,
         required: true,
       },
-      taxRate: {
-        type: mongoose.Schema.ObjectId,
-        ref: 'Taxes',
-        autopopulate: true,
+      notes: {
+        type: String,
+      },
+      receivedQuantity: {
+        type: Number,
+        default: 0,
+        min: [0, 'Received quantity cannot be negative'],
+      },
+      expectedDelivery: {
+        type: Date,
+      },
+      status: {
+        type: String,
+        enum: ['ordered', 'partially_received', 'fully_received', 'cancelled'],
+        default: 'ordered',
       },
     },
   ],
@@ -131,5 +150,39 @@ const purchaseSchema = new mongoose.Schema({
   },
 });
 
+// Auto-populate item references with specific fields
 purchaseSchema.plugin(require('mongoose-autopopulate'));
+
+// Pre-save hook to calculate item totals and update item quantities
+purchaseSchema.pre('save', async function (next) {
+  if (this.isModified('items')) {
+    this.items.forEach((item) => {
+      item.total = item.purchasePrice * item.quantity - (item.discount || 0);
+    });
+
+    this.subTotal = this.items.reduce((sum, item) => sum + item.purchasePrice * item.quantity, 0);
+    this.total = this.subTotal - this.discount + this.taxTotal;
+
+    if (this.isModified('status') && this.status === 'received') {
+      for (const purchaseItem of this.items) {
+        await mongoose.model('Items').findByIdAndUpdate(purchaseItem.item, {
+          $inc: { quantity: purchaseItem.quantity },
+          $set: {
+            costPrice: purchaseItem.purchasePrice, // Update cost price
+            supplier: this.supplier, // Update supplier reference
+          },
+        });
+      }
+    }
+  }
+  next();
+});
+
+// Indexes for better performance
+purchaseSchema.index({ supplier: 1 });
+purchaseSchema.index({ status: 1 });
+purchaseSchema.index({ date: 1 });
+purchaseSchema.index({ paymentStatus: 1 });
+purchaseSchema.index({ 'items.item': 1 });
+
 module.exports = mongoose.model('Purchase', purchaseSchema);
