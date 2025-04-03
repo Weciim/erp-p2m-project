@@ -11,12 +11,11 @@ import {
   Col,
   DatePicker,
 } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import AutoCompleteAsync from "@/components/AutoCompleteAsync";
-import ItemRow from "@/modules/ErpPanelModule/ItemRow";
 import MoneyInputFormItem from "@/components/MoneyInputFormItem";
 import { selectFinanceSettings } from "@/redux/settings/selectors";
-import { useDate } from "@/settings";
+import { useDate, useMoney } from "@/settings";
 import useLanguage from "@/locale/useLanguage";
 import calculate from "@/utils/calculate";
 import { useSelector } from "react-redux";
@@ -29,6 +28,7 @@ export default function SalesForm({ subTotal = 0, current = null }) {
 function LoadSalesForm({ subTotal = 0, current = null }) {
   const translate = useLanguage();
   const { dateFormat } = useDate();
+  const money = useMoney();
   const { last_sales_number } = useSelector(selectFinanceSettings);
   const [total, setTotal] = useState(0);
   const [taxRate, setTaxRate] = useState(0);
@@ -66,6 +66,126 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
     addField.current.click();
   }, []);
 
+  const CustomItemRow = ({ field, remove, current = null }) => {
+    const [price, setPrice] = useState(0);
+    const [quantity, setQuantity] = useState(0);
+    const [rowTotal, setRowTotal] = useState(0);
+    useEffect(() => {
+      if (current) {
+        const { items, invoice } = current;
+        const source = invoice ? invoice : items;
+        const item = source?.[field.fieldKey];
+        if (item) {
+          setQuantity(item.quantity);
+          setPrice(item.price);
+          setRowTotal(calculate.multiply(item.price, item.quantity));
+        }
+      }
+    }, [current, field.fieldKey]);
+
+    useEffect(() => {
+      const currentTotal = calculate.multiply(price, quantity);
+      setRowTotal(currentTotal);
+    }, [price, quantity]);
+
+    return (
+      <Row gutter={[12, 12]} style={{ position: "relative", marginBottom: 16 }}>
+        <Col className="gutter-row" span={5}>
+          <Form.Item
+            name={[field.name, "item"]}
+            rules={[{ required: true, message: "Please select an item" }]}
+          >
+            {/* <SelectAsync
+              entity="items"
+              displayLabels={["code", "name"]}
+              outputValue="_id"
+              placeholder="Select item"
+              withRedirect={true}
+              redirectLabel="Add New Item"
+              urlToRedirect="/items"
+            /> */}
+                <AutoCompleteAsync
+              entity={"items"}
+              displayLabels={["code","name"]}
+              outputValue="_id"
+              placeholder="Select item"
+              searchFields={"code"}
+              redirectLabel={"Add New Item"}
+              withRedirect
+              urlToRedirect={"/items"}
+            />
+          </Form.Item>
+        </Col>
+        <Col className="gutter-row" span={7}>
+          <Form.Item name={[field.name, "description"]}>
+            <Input placeholder="Description" />
+          </Form.Item>
+        </Col>
+        <Col className="gutter-row" span={3}>
+          <Form.Item
+            name={[field.name, "quantity"]}
+            rules={[{ required: true, message: "Quantity is required" }]}
+          >
+            <InputNumber
+              style={{ width: "100%" }}
+              min={1}
+              onChange={(value) => setQuantity(value || 0)}
+            />
+          </Form.Item>
+        </Col>
+        <Col className="gutter-row" span={4}>
+          <Form.Item
+            name={[field.name, "price"]}
+            rules={[{ required: true, message: "Price is required" }]}
+          >
+            <InputNumber
+              style={{ width: "100%" }}
+              min={0}
+              onChange={(value) => setPrice(value || 0)}
+              addonAfter={
+                money.currency_position === "after"
+                  ? money.currency_symbol
+                  : undefined
+              }
+              addonBefore={
+                money.currency_position === "before"
+                  ? money.currency_symbol
+                  : undefined
+              }
+            />
+          </Form.Item>
+        </Col>
+        <Col className="gutter-row" span={5}>
+          <Form.Item name={[field.name, "total"]}>
+            <InputNumber
+              readOnly
+              style={{ width: "100%" }}
+              value={rowTotal}
+              addonAfter={
+                money.currency_position === "after"
+                  ? money.currency_symbol
+                  : undefined
+              }
+              addonBefore={
+                money.currency_position === "before"
+                  ? money.currency_symbol
+                  : undefined
+              }
+            />
+          </Form.Item>
+        </Col>
+        <div style={{ position: "absolute", right: -30, top: 10 }}>
+          <Button
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => remove(field.name)}
+          />
+        </div>
+      </Row>
+    );
+  };
+
   return (
     <>
       <Row gutter={[12, 0]}>
@@ -73,11 +193,7 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
           <Form.Item
             name="client"
             label={translate("Client")}
-            rules={[
-              {
-                required: true,
-              },
-            ]}
+            rules={[{ required: true }]}
           >
             <AutoCompleteAsync
               entity={"client"}
@@ -94,11 +210,7 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
             label={translate("Number")}
             name="number"
             initialValue={lastNumber}
-            rules={[
-              {
-                required: true,
-              },
-            ]}
+            rules={[{ required: true }]}
           >
             <InputNumber min={1} style={{ width: "100%" }} />
           </Form.Item>
@@ -108,11 +220,7 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
             label={translate("Year")}
             name="year"
             initialValue={currentYear}
-            rules={[
-              {
-                required: true,
-              },
-            ]}
+            rules={[{ required: true }]}
           >
             <InputNumber style={{ width: "100%" }} />
           </Form.Item>
@@ -121,11 +229,6 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
           <Form.Item
             label={translate("Status")}
             name="status"
-            rules={[
-              {
-                required: false,
-              },
-            ]}
             initialValue={"draft"}
           >
             <Select
@@ -137,19 +240,14 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
                 { value: "cancelled", label: translate("Cancelled") },
                 { value: "on hold", label: translate("On hold") },
               ]}
-            ></Select>
+            />
           </Form.Item>
         </Col>
         <Col className="gutter-row" span={8}>
           <Form.Item
             name="date"
             label={translate("Date")}
-            rules={[
-              {
-                required: true,
-                type: "object",
-              },
-            ]}
+            rules={[{ required: true, type: "object" }]}
             initialValue={dayjs()}
           >
             <DatePicker style={{ width: "100%" }} format={dateFormat} />
@@ -161,6 +259,7 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
           </Form.Item>
         </Col>
       </Row>
+
       <Divider dashed />
       <Row gutter={[12, 12]} style={{ position: "relative" }}>
         <Col className="gutter-row" span={5}>
@@ -179,14 +278,15 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
           <p>{translate("Total")}</p>
         </Col>
       </Row>
+
       <Form.List name="items">
         {(fields, { add, remove }) => (
           <>
             {fields.map((field) => (
-              <ItemRow
+              <CustomItemRow
                 key={field.key}
-                remove={remove}
                 field={field}
+                remove={remove}
                 current={current}
               />
             ))}
@@ -204,6 +304,7 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
           </>
         )}
       </Form.List>
+
       <Divider dashed />
       <div style={{ position: "relative", width: "100%", float: "right" }}>
         <Row gutter={[12, -5]}>
@@ -232,19 +333,25 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
             </p>
           </Col>
           <Col className="gutter-row" span={5}>
-            <MoneyInputFormItem readOnly value={subTotal} />
+            <MoneyInputFormItem
+              readOnly
+              value={subTotal}
+              addonAfter={
+                money.currency_position === "after"
+                  ? money.currency_symbol
+                  : undefined
+              }
+              addonBefore={
+                money.currency_position === "before"
+                  ? money.currency_symbol
+                  : undefined
+              }
+            />
           </Col>
         </Row>
         <Row gutter={[12, -5]}>
           <Col className="gutter-row" span={4} offset={15}>
-            <Form.Item
-              name="taxRate"
-              rules={[
-                {
-                  required: true,
-                },
-              ]}
-            >
+            <Form.Item name="taxRate" rules={[{ required: true }]}>
               <SelectAsync
                 value={taxRate}
                 onChange={handleTaxChange}
@@ -256,10 +363,24 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
                 redirectLabel={translate("Add New Tax")}
                 placeholder={translate("Select Tax Value")}
               />
+              
             </Form.Item>
           </Col>
           <Col className="gutter-row" span={5}>
-            <MoneyInputFormItem readOnly value={taxTotal} />
+            <MoneyInputFormItem
+              readOnly
+              value={taxTotal}
+              addonAfter={
+                money.currency_position === "after"
+                  ? money.currency_symbol
+                  : undefined
+              }
+              addonBefore={
+                money.currency_position === "before"
+                  ? money.currency_symbol
+                  : undefined
+              }
+            />
           </Col>
         </Row>
         <Row gutter={[12, -5]}>
@@ -276,7 +397,20 @@ function LoadSalesForm({ subTotal = 0, current = null }) {
             </p>
           </Col>
           <Col className="gutter-row" span={5}>
-            <MoneyInputFormItem readOnly value={total} />
+            <MoneyInputFormItem
+              readOnly
+              value={total}
+              addonAfter={
+                money.currency_position === "after"
+                  ? money.currency_symbol
+                  : undefined
+              }
+              addonBefore={
+                money.currency_position === "before"
+                  ? money.currency_symbol
+                  : undefined
+              }
+            />
           </Col>
         </Row>
       </div>

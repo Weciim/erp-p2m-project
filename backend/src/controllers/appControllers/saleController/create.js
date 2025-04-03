@@ -34,7 +34,6 @@ const create = async (req, res) => {
         total: itemTotal,
       };
     });
-
     taxTotal = calculate.multiply(subTotal, taxRate / 100);
     total = calculate.add(subTotal, taxTotal);
 
@@ -53,7 +52,6 @@ const create = async (req, res) => {
 
     // Create sale
     const sale = await new SaleModel(saleData).save();
-
     // Create invoice
     const invoiceData = {
       client: sale.client,
@@ -61,12 +59,12 @@ const create = async (req, res) => {
       year: new Date().getFullYear(),
       date: sale.date,
       expiredDate: new Date(new Date(sale.date).setDate(new Date(sale.date).getDate() + 30)), // 30 days from sale date
-      items: sale.items.map(item => ({
+      items: sale.items.map((item) => ({
         itemName: item.itemName,
         description: item.description,
         quantity: item.quantity,
         price: item.price,
-        total: item.total
+        total: item.total,
       })),
       taxRate: sale.taxRate,
       subTotal: sale.subTotal,
@@ -76,15 +74,12 @@ const create = async (req, res) => {
       paymentStatus: sale.paymentStatus,
       currency: sale.currency,
       status: 'sent',
-      createdBy: req.admin._id
+      createdBy: req.admin._id,
     };
 
     const invoice = await new InvoiceModel(invoiceData).save();
     const invoiceFileId = 'invoice-' + invoice._id + '.pdf';
-    await InvoiceModel.findByIdAndUpdate(
-      invoice._id,
-      { pdf: invoiceFileId }
-    );
+    await InvoiceModel.findByIdAndUpdate(invoice._id, { pdf: invoiceFileId });
 
     // Create payment if sale is paid
     let payment = null;
@@ -99,15 +94,12 @@ const create = async (req, res) => {
         paymentMode: body.paymentMode,
         ref: body.paymentRef,
         description: `Payment for sale ${sale.number}`,
-        createdBy: req.admin._id
+        createdBy: req.admin._id,
       };
 
       payment = await PaymentModel.create(paymentData);
       const paymentFileId = 'payment-' + payment._id + '.pdf';
-      await PaymentModel.findByIdAndUpdate(
-        payment._id,
-        { pdf: paymentFileId }
-      );
+      await PaymentModel.findByIdAndUpdate(payment._id, { pdf: paymentFileId });
 
       // Update invoice with payment
       await InvoiceModel.findOneAndUpdate(
@@ -115,7 +107,7 @@ const create = async (req, res) => {
         {
           $push: { payment: payment._id },
           $inc: { credit: total },
-          $set: { paymentStatus: 'paid' }
+          $set: { paymentStatus: 'paid' },
         }
       );
     }
@@ -127,7 +119,7 @@ const create = async (req, res) => {
     const result = {
       sale,
       invoice,
-      payment
+      payment,
     };
 
     return res.status(200).json({
@@ -135,7 +127,6 @@ const create = async (req, res) => {
       result,
       message: 'Sale, invoice and payment created successfully',
     });
-
   } catch (error) {
     console.error('Error creating sale:', error);
     return res.status(500).json({

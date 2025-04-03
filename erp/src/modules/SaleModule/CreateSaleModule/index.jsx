@@ -1,11 +1,11 @@
 import { ErpLayout } from "@/layout";
 import CreateItem from "@/modules/ErpPanelModule/CreateItem";
-import PurchaseForm from "@/modules/SaleModule/Forms/SaleForm.jsx";
+import SaleForm from "@/modules/SaleModule/Forms/SaleForm.jsx";
 
 export default function CreateInvoiceModule({ config }) {
   return (
     <ErpLayout>
-      <CreateItem config={config} CreateForm={PurchaseForm} />
+      <CreateItem config={config} CreateForm={SaleForm} />
     </ErpLayout>
   );
 }

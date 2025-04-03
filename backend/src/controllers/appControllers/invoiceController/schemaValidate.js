@@ -12,12 +12,13 @@ const schema = Joi.object({
     .items(
       Joi.object({
         _id: Joi.string().allow('').optional(),
-        itemName: Joi.string().required(),
+        item: Joi.alternatives().try(Joi.string(), Joi.object()).optional(), // Add item field
+        itemName: Joi.string().allow('').optional(), // Make itemName optional
         description: Joi.string().allow(''),
         quantity: Joi.number().required(),
         price: Joi.number().required(),
         total: Joi.number().required(),
-      }).required()
+      })
     )
     .required(),
   taxRate: Joi.alternatives().try(Joi.number(), Joi.string()).required(),

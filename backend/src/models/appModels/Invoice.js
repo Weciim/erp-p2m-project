@@ -53,7 +53,7 @@ const invoiceSchema = new mongoose.Schema({
      
       itemName: {
         type: String,
-        required: true,
+        // required: true,
       },
       description: {
         type: String,
