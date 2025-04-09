@@ -1,0 +1,56 @@
+# Stage 1: Builder - Install dependencies and build
+FROM node:20.10-alpine AS builder
+
+# Install build tools for native dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    git
+
+# Create secure directory structure
+RUN mkdir -p /app/node_modules && chown -R node:node /app
+WORKDIR /app
+
+# Install dependencies (cached layer)
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci --omit=dev --prefer-offline --no-audit --progress=false
+
+# Copy and build application
+COPY --chown=node:node . .
+USER node
+RUN npm run build # If using TypeScript/Babel
+
+# Stage 2: Runtime - Production-optimized image
+FROM node:20.10-alpine
+
+# Security hardening
+RUN apk add --no-cache dumb-init && \
+    rm -rf /var/cache/apk/* && \
+    mkdir -p /app && chown -R node:node /app
+
+WORKDIR /app
+
+# Copy runtime dependencies
+COPY --from=builder --chown=node:node /app/package.json .
+COPY --from=builder --chown=node:node /app/package-lock.json .
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+
+# Copy built application
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/migrations ./migrations
+COPY --from=builder --chown=node:node /app/seeders ./seeders
+
+# Runtime configuration
+ENV NODE_ENV=production
+ENV PORT=8888
+EXPOSE 8888
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s \
+    CMD curl -f http://localhost:8888/health || exit 1
+
+# Secure runtime execution
+USER node
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "dist/server.js"]
