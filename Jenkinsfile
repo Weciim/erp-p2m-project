@@ -1,6 +1,11 @@
 pipeline {
-    agent any  // Changed from docker agent to any since we'll handle Docker manually
-    
+    agent {
+      docker {
+        image 'node:20.10-alpine' 
+        args '-u root --platform linux/amd64 -v /var/run/docker.sock:/var/run/docker.sock'
+        reuseNode true
+             }
+         }
     environment {
         // Registry config
         DOCKER_REGISTRY = 'ghcr.io'
