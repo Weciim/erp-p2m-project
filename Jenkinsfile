@@ -58,6 +58,8 @@ pipeline {
         stage('Containerize') {
             steps {
                 script {
+                    def dockerCmd = "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe"
+
                     // Build frontend
                     bat """
                     ${DOCKER_CMD} build -t ${FRONTEND_IMAGE} -f erp/Dockerfile.prod erp/
