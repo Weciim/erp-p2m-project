@@ -11,12 +11,12 @@ pipeline {
         // Registry config (use GitHub Container Registry)
         DOCKER_REGISTRY = 'ghcr.io'
         DOCKER_IMAGE_PREFIX = 'Weciim'
-        FRONTEND_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-frontend:${env.GIT_COMMIT_SHORT_SHA}"
-        BACKEND_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-backend:${env.GIT_COMMIT_SHORT_SHA}"
+        FRONTEND_IMAGE = "erp-frontend:local"  // Changed for local testing
+        BACKEND_IMAGE = "erp-backend:local"    // Changed for local testing
         
         // K8s config
         KUBE_NAMESPACE = 'erp-prod'
-        KUBE_CONTEXT = 'minikube' // Change for production clusters
+        KUBE_CONTEXT = 'minikube'
     }
 
     stages {
@@ -24,9 +24,8 @@ pipeline {
         stage('Setup') {
             steps {
                 checkout scm
-                sh 'git config --global safe.directory /workspace' // Fix git security warnings
+                sh 'git config --global safe.directory /workspace'
                 
-                // Cache node_modules between builds (massive speed boost)
                 dir('erp') {
                     cache(path: './node_modules', includes: '**/node_modules/**', key: "erp-${env.GIT_COMMIT_SHORT_SHA}") {
                         sh 'npm ci --prefer-offline'
@@ -40,44 +39,34 @@ pipeline {
             }
         }
 
-        // Stage 2: Frontend build with modern tools
+        // Stage 2: Frontend build
         stage('Frontend Build') {
             steps {
                 dir('erp') {
-                    // Modern build tools (adjust if using Vite/Next.js)
-                    // sh 'npm run lint:ci' 
-                    sh 'npm run test:ci' // Example: "vitest run --coverage"
+                    sh 'npm run test:ci'
                     sh 'npm run build'
-                    
-                    // Bundle analyzer (optional)
-                    // sh 'npm run build:analyze' 
-                    
-                    // Security (critical for production)
-                    sh 'npx audit-ci --config .auditci.json' // Custom thresholds
+                    sh 'npx audit-ci --config .auditci.json'
                 }
             }
             post {
                 success {
-                    archiveArtifacts artifacts: 'frontend/dist/**/*', fingerprint: true
+                    archiveArtifacts artifacts: 'erp/dist/**/*', fingerprint: true  // Fixed path
                 }
             }
         }
 
-        // Stage 3: Backend build with Node 20 features
+        // Stage 3: Backend build
         stage('Backend Build') {
             steps {
                 dir('backend') {
-                    // Node 20 specific optimizations
-                    sh 'npm run build' // Uses ES modules if package.json has "type": "module"
-                    sh 'npm run test:ci -- --detectOpenHandles' // Jest with Node 20 flags
-                    
-                    // Container vulnerability scan
+                    sh 'npm run build'
+                    sh 'npm run test:ci -- --detectOpenHandles'
                     sh 'docker scout quickview .'
                 }
             }
         }
 
-        // Stage 4: Containerization (multi-platform aware)
+        // Stage 4: Containerization
         stage('Containerize') {
             agent {
                 docker {
@@ -86,66 +75,60 @@ pipeline {
                 }
             }
             environment {
-                DOCKER_BUILDKIT = '1' // Enable BuildKit for faster builds
+                DOCKER_BUILDKIT = '1'
             }
             steps {
                 script {
-                    // docker.withRegistry("https://${DOCKER_REGISTRY}", 'github-container-registry-creds') {
-                    //     docker.build(FRONTEND_IMAGE, """
-                    //         --platform linux/amd64 
-                    //         --file frontend/Dockerfile.prod 
-                    //         --build-arg NODE_ENV=production 
-                    //         frontend/
-                    //     """).push()
-                        sh """
-                            docker build -t ${FRONTEND_IMAGE} --file erp/Dockerfile.prod erp/
-                            docker build -t ${BACKEND_IMAGE} --file backend/Dockerfile.prod backend/
-                           """
-                        // Backend with Node 20 base
-                        // docker.build(BACKEND_IMAGE, """
-                        //     --platform linux/amd64 
-                        //     --file backend/Dockerfile.prod 
-                        //     --build-arg NODE_VERSION=20.10 
-                        //     backend/
-                        // """).push()
-                    }
+                    // Build without pushing for local testing
+                    sh """
+                    docker build -t ${FRONTEND_IMAGE} -f erp/Dockerfile.prod erp/
+                    docker build -t ${BACKEND_IMAGE} -f backend/Dockerfile.prod backend/
+                    """
                 }
             }
         }
 
-        // Stage 5: Kubernetes Deployment (modern approach)
+        // Stage 5: Kubernetes Deployment
         stage('Deploy') {
             agent any
             environment {
-                KUBECONFIG = credentials('minikube-kubeconfig') // Securely stored in Jenkins
+                KUBECONFIG = credentials('minikube-kubeconfig')
             }
             steps {
-                // Helm deployment (modern alternative to raw manifests)
-                sh """
-                helm upgrade --install erp-frontend ./charts/frontend \
-                    --namespace ${KUBE_NAMESPACE} \
-                    --set image.tag=${env.GIT_COMMIT_SHORT_SHA} \
-                    --wait --atomic --timeout 5m
-                
-                helm upgrade --install erp-backend ./charts/backend \
-                    --namespace ${KUBE_NAMESPACE} \
-                    --set image.tag=${env.GIT_COMMIT_SHORT_SHA} \
-                    --wait --atomic --timeout 5m
-                """
-                
-                // Post-deployment verification
-                sh """
-                kubectl rollout status -n ${KUBE_NAMESPACE} deployment/erp-frontend
-                kubectl rollout status -n ${KUBE_NAMESPACE} deployment/erp-backend
-                kubectl get pods -n ${KUBE_NAMESPACE} -o wide
-                """
+                script {
+                    // Create namespace if not exists
+                    sh "kubectl create namespace ${KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
+                    
+                    // Load Docker images into Minikube
+                    sh "minikube image load ${FRONTEND_IMAGE}"
+                    sh "minikube image load ${BACKEND_IMAGE}"
+                    
+                    // Helm deployment with local images
+                    sh """
+                    helm upgrade --install erp-frontend ./charts/frontend \
+                        --namespace ${KUBE_NAMESPACE} \
+                        --set image.repository=erp-frontend \
+                        --set image.tag=local \
+                        --set image.pullPolicy=Never \
+                        --wait --atomic --timeout 5m
+                    
+                    helm upgrade --install erp-backend ./charts/backend \
+                        --namespace ${KUBE_NAMESPACE} \
+                        --set image.repository=erp-backend \
+                        --set image.tag=local \
+                        --set image.pullPolicy=Never \
+                        --wait --atomic --timeout 5m
+                    """
+                    
+                    // Port forwarding for local access
+                    sh "kubectl port-forward svc/erp-frontend 9090:80 -n ${KUBE_NAMESPACE} &"
+                }
             }
         }
     }
 
     post {
         always {
-            // Cleanup and notifications
             cleanWs()
             script {
                 def duration = currentBuild.durationString.replace(' and counting', '')
@@ -163,10 +146,9 @@ pipeline {
             }
         }
         failure {
-            // Automatic rollback
             sh """
-            helm rollback -n ${KUBE_NAMESPACE} erp-frontend 0
-            helm rollback -n ${KUBE_NAMESPACE} erp-backend 0
+            helm rollback -n ${KUBE_NAMESPACE} erp-frontend 0 || true
+            helm rollback -n ${KUBE_NAMESPACE} erp-backend 0 || true
             """
         }
     }
