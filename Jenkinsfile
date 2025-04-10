@@ -26,6 +26,15 @@ pipeline {
         // Stage 1: Checkout and setup
         stage('Setup') {
             steps {
+                checkout([
+                $class: 'GitSCM',
+                branches: [[name: '*/finance-module']], 
+                extensions: [],
+                userRemoteConfigs: [[
+                    credentialsId: 'github-token',
+                    url: 'https://github.com/Weciim/erp-p2m-project.git'
+                ]]
+                ])
                 checkout scm
                 bat 'git config --global safe.directory %WORKSPACE%'
                 
