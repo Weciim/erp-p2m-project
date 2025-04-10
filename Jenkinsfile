@@ -12,45 +12,61 @@ pipeline {
         KUBE_NAMESPACE = 'erp-prod'
         KUBE_CONTEXT = 'minikube'
         
-        // Tools config
-        DOCKER_CMD = 'docker'
-        NPM_CMD = 'npm'
+        // Git config
         GIT_BRANCH = 'finance-module'
+        GIT_URL = 'https://github.com/Weciim/erp-p2m-project.git'
+        
+        // Tools config
+        NPM_CMD = 'npm'
     }
 
     stages {
-        // Stage 1: Checkout code (run directly on Jenkins agent)
-        stage('Checkout') {
+        // Stage 1: Checkout code on Jenkins host (not in Docker)
+        stage('Checkout Code') {
             agent any
             steps {
+                cleanWs()
+                
                 checkout([
                     $class: 'GitSCM',
                     branches: [[name: "*/${env.GIT_BRANCH}"]],
-                    extensions: [[
-                        $class: 'CleanBeforeCheckout'
-                    ]],
+                    extensions: [
+                        [$class: 'CleanBeforeCheckout'],
+                        [$class: 'CloneOption', shallow: true, depth: 1, noTags: false]
+                    ],
                     userRemoteConfigs: [[
                         credentialsId: 'github-token',
-                        url: 'https://github.com/Weciim/erp-p2m-project.git'
+                        url: "${env.GIT_URL}"
                     ]]
                 ])
                 
-                // Set safe directory for Git
+                // Set workspace as safe directory
                 bat 'git config --global --add safe.directory %WORKSPACE%'
+                sh 'git config --global --add safe.directory $WORKSPACE'
             }
         }
 
-        // Stage 2: Build and Deploy (run in Docker container)
+        // Stage 2: Build and Deploy in Docker container
         stage('Build and Deploy') {
             agent {
                 docker {
                     image 'node:20.10-alpine' 
-                    args '-u root --platform linux/amd64 -v /var/run/docker.sock:/var/run/docker.sock'
+                    args '--platform linux/amd64 -u root -v $WORKSPACE:$WORKSPACE -w $WORKSPACE -v /var/run/docker.sock:/var/run/docker.sock'
                     reuseNode true
                 }
             }
             stages {
-                // Setup dependencies
+                // Install required tools
+                stage('Setup Environment') {
+                    steps {
+                        // Install Git and other dependencies in container
+                        sh 'apk add --no-cache git docker-cli'
+                        sh 'git --version'
+                        sh 'docker --version'
+                    }
+                }
+
+                // Install dependencies
                 stage('Install Dependencies') {
                     steps {
                         dir('erp') {
@@ -63,7 +79,7 @@ pipeline {
                 }
 
                 // Frontend build
-                stage('Frontend Build') {
+                stage('Build Frontend') {
                     steps {
                         dir('erp') {
                             sh "${env.NPM_CMD} run test:ci"
@@ -74,7 +90,7 @@ pipeline {
                 }
 
                 // Backend build
-                stage('Backend Build') {
+                stage('Build Backend') {
                     steps {
                         dir('backend') {
                             sh "${env.NPM_CMD} run build"
@@ -84,37 +100,32 @@ pipeline {
                 }
 
                 // Containerization
-                stage('Containerize') {
+                stage('Build Docker Images') {
                     steps {
-                        script {
-                            // Build frontend
-                            sh """
-                            ${env.DOCKER_CMD} build -t ${env.FRONTEND_IMAGE} -f erp/Dockerfile.prod erp/
-                            """
-                            
-                            // Build backend
-                            sh """
-                            ${env.DOCKER_CMD} build -t ${env.BACKEND_IMAGE} -f backend/Dockerfile.prod backend/
-                            """
-                            
-                            // Verify images
-                            sh "${env.DOCKER_CMD} images"
-                        }
+                        sh """
+                        docker build -t ${env.FRONTEND_IMAGE} -f erp/Dockerfile.prod erp/
+                        docker build -t ${env.BACKEND_IMAGE} -f backend/Dockerfile.prod backend/
+                        docker images
+                        """
                     }
                 }
 
-                // Kubernetes Deployment
-                stage('Deploy') {
+                // Deployment
+                stage('Deploy to Kubernetes') {
                     steps {
                         script {
-                            // Create namespace
-                            sh "kubectl create namespace ${env.KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
+                            // Create namespace if not exists
+                            sh """
+                            kubectl create namespace ${env.KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                            """
                             
                             // Load images into Minikube
-                            sh "minikube image load ${env.FRONTEND_IMAGE}"
-                            sh "minikube image load ${env.BACKEND_IMAGE}"
+                            sh """
+                            minikube image load ${env.FRONTEND_IMAGE}
+                            minikube image load ${env.BACKEND_IMAGE}
+                            """
                             
-                            // Helm deployment
+                            // Helm deployments
                             sh """
                             helm upgrade --install erp-frontend ./charts/frontend \
                                 --namespace ${env.KUBE_NAMESPACE} \
@@ -133,8 +144,10 @@ pipeline {
                                 --wait --atomic --timeout 5m
                             """
                             
-                            // Port forwarding
-                            sh "nohup kubectl port-forward svc/erp-frontend 9090:80 -n ${env.KUBE_NAMESPACE} &"
+                            // Port forwarding (background process)
+                            sh """
+                            nohup kubectl port-forward svc/erp-frontend 9090:80 -n ${env.KUBE_NAMESPACE} > /dev/null 2>&1 &
+                            """
                         }
                     }
                 }
