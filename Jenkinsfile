@@ -21,30 +21,27 @@ pipeline {
     }
 
     stages {
-        // Stage 1: Checkout code on Jenkins host (not in Docker)
-        stage('Checkout Code') {
-            agent any
-            steps {
-                cleanWs()
-                
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: "*/${env.GIT_BRANCH}"]],
-                    extensions: [
-                        [$class: 'CleanBeforeCheckout'],
-                        [$class: 'CloneOption', shallow: true, depth: 1, noTags: false]
-                    ],
-                    userRemoteConfigs: [[
-                        credentialsId: 'github-token',
-                        url: "${env.GIT_URL}"
-                    ]]
-                ])
-                
-                // Set workspace as safe directory
-                bat 'git config --global --add safe.directory %WORKSPACE%'
-                sh 'git config --global --add safe.directory $WORKSPACE'
-            }
+       
+       stage('Checkout Code') {
+    agent any
+    steps {
+        cleanWs()
+        dir('erp-project') {  
+            checkout([
+                $class: 'GitSCM',
+                branches: [[name: "*/${env.GIT_BRANCH}"]],
+                extensions: [
+                    [$class: 'CleanBeforeCheckout'],
+                    [$class: 'CloneOption', shallow: true, depth: 1, noTags: false]
+                ],
+                userRemoteConfigs: [[
+                    credentialsId: 'github-token',
+                    url: "${env.GIT_URL}"
+                ]]
+            ])
         }
+    }
+}
 
         // Stage 2: Build and Deploy in Docker container
         stage('Build and Deploy') {
