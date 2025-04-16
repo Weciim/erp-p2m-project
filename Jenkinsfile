@@ -27,18 +27,45 @@ pipeline {
     steps {
         cleanWs()
         dir('erp-project') {  
-            checkout([
-                $class: 'GitSCM',
-                branches: [[name: "*/${env.GIT_BRANCH}"]],
-                extensions: [
-                    [$class: 'CleanBeforeCheckout'],
-                    [$class: 'CloneOption', shallow: true, depth: 1, noTags: false]
-                ],
-                userRemoteConfigs: [[
-                    credentialsId: 'github-token',
-                    url: "${env.GIT_URL}"
-                ]]
-            ])
+           script {
+                    // First ensure workspace exists
+                    sh 'mkdir -p $WORKSPACE'
+                    sh 'chmod -R 777 $WORKSPACE'
+                    
+                    // Explicit git initialization
+                    sh 'git init'
+                    
+                    // Manual git configuration
+                    sh 'git config --global user.name "Jenkins"'
+                    sh 'git config --global user.email "jenkins@example.com"'
+                    
+                    // Try checkout with retries
+                    retry(3) {
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: "*/${env.GIT_BRANCH}"]],
+                            extensions: [
+                                [$class: 'CleanBeforeCheckout'],
+                                [$class: 'CloneOption', 
+                                 shallow: true, 
+                                 depth: 1, 
+                                 noTags: false,
+                                 timeout: 10]
+                            ],
+                            userRemoteConfigs: [[
+                                credentialsId: 'github-token',
+                                url: "${env.GIT_URL}",
+                                timeout: 10
+                            ]],
+                            doGenerateSubmoduleConfigurations: false,
+                            submoduleCfg: []
+                        ])
+                    }
+                    
+                    // Verify checkout
+                    sh 'git branch -v'
+                    sh 'git remote -v'
+                }
         }
     }
 }
