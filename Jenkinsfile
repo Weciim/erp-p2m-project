@@ -74,7 +74,6 @@ pipeline {
             }
         }
 
-        // Rest of your pipeline remains exactly the same...
         stage('Build and Deploy') {
             agent {
                 docker {
@@ -83,19 +82,156 @@ pipeline {
                     reuseNode true
                 }
             }
-            // ... keep all existing stages ...
+            environment {
+                DOCKER_BUILDKIT = '1'
+                NODE_ENV = 'production'
+            }
+            stages {
+                stage('Setup Environment') {
+                    steps {
+                        script {
+                            try {
+                                sh '''
+                                    apk add --no-cache git docker-cli openssh-client
+                                    git --version
+                                    docker --version
+                                '''
+                            } catch (Exception e) {
+                                error("Environment setup failed: ${e.message}")
+                            }
+                        }
+                    }
+                }
+
+                stage('Install Dependencies') {
+                    steps {
+                        script {
+                            dir('erp') {
+                                sh "${env.NPM_CMD} ci --prefer-offline --cache .npm_cache"
+                            }
+                            dir('backend') {
+                                sh "${env.NPM_CMD} ci --prefer-offline --omit=dev --cache .npm_cache"
+                            }
+                        }
+                    }
+                }
+
+                stage('Build Frontend') {
+                    steps {
+                        dir('erp') {
+                            script {
+                                try {
+                                    sh """
+                                        ${env.NPM_CMD} run test:ci -- --ci --reporters=default --reporters=jest-junit
+                                        ${env.NPM_CMD} run build
+                                        npx audit-ci --config .auditci.json || true
+                                    """
+                                    junit '**/junit.xml'
+                                } catch (Exception e) {
+                                    archiveArtifacts artifacts: '**/screenshots/*.png', allowEmptyArchive: true
+                                    error("Frontend build failed: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Build Backend') {
+                    steps {
+                        dir('backend') {
+                            script {
+                                try {
+                                    sh """
+                                        ${env.NPM_CMD} run test:ci -- --ci --detectOpenHandles --reporters=default --reporters=jest-junit
+                                        ${env.NPM_CMD} run build
+                                    """
+                                    junit '**/junit.xml'
+                                } catch (Exception e) {
+                                    error("Backend build failed: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Build Docker Images') {
+                    steps {
+                        script {
+                            try {
+                                sh """
+                                    docker build \
+                                        --build-arg NODE_ENV=production \
+                                        -t ${env.FRONTEND_IMAGE} \
+                                        -f erp/Dockerfile.prod \
+                                        --cache-from ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_PREFIX}/erp-frontend:latest \
+                                        erp/
+                                    
+                                    docker build \
+                                        --build-arg NODE_ENV=production \
+                                        -t ${env.BACKEND_IMAGE} \
+                                        -f backend/Dockerfile.prod \
+                                        --cache-from ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_PREFIX}/erp-backend:latest \
+                                        backend/
+                                    
+                                    docker images
+                                """
+                            } catch (Exception e) {
+                                error("Docker build failed: ${e.message}")
+                            }
+                        }
+                    }
+                }
+
+                stage('Deploy to Kubernetes') {
+                    steps {
+                        script {
+                            try {
+                                sh """
+                                    kubectl create namespace ${env.KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - || true
+                                    minikube image load ${env.FRONTEND_IMAGE} || true
+                                    minikube image load ${env.BACKEND_IMAGE} || true
+                                    
+                                    helm upgrade --install erp-frontend ./charts/frontend \
+                                        --namespace ${env.KUBE_NAMESPACE} \
+                                        --set image.repository=erp-frontend \
+                                        --set image.tag=${env.BUILD_NUMBER} \
+                                        --set image.pullPolicy=IfNotPresent \
+                                        --wait --atomic --timeout 5m
+                                    
+                                    helm upgrade --install erp-backend ./charts/backend \
+                                        --namespace ${env.KUBE_NAMESPACE} \
+                                        --set image.repository=erp-backend \
+                                        --set image.tag=${env.BUILD_NUMBER} \
+                                        --set image.pullPolicy=IfNotPresent \
+                                        --wait --atomic --timeout 5m
+                                    
+                                    kubectl rollout status deployment/erp-frontend -n ${env.KUBE_NAMESPACE} --timeout=300s
+                                    kubectl rollout status deployment/erp-backend -n ${env.KUBE_NAMESPACE} --timeout=300s
+                                    
+                                    pkill -f "kubectl port-forward" || true
+                                    nohup kubectl port-forward svc/erp-frontend 9090:80 -n ${env.KUBE_NAMESPACE} > /dev/null 2>&1 &
+                                """
+                            } catch (Exception e) {
+                                sh """
+                                    helm rollback -n ${env.KUBE_NAMESPACE} erp-frontend 0 || true
+                                    helm rollback -n ${env.KUBE_NAMESPACE} erp-backend 0 || true
+                                """
+                                error("Deployment failed: ${e.message}")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
     post {
         always {
             script {
-                node {
+                // Use any agent for post-build steps
+                node('master') {
                     try {
-                        // Clean up port forwarding
                         sh 'pkill -f "kubectl port-forward" || true'
-                        
-                        // Get commit info safely
                         def commit = sh(script: 'git rev-parse --short HEAD || echo "unknown"', returnStdout: true).trim()
                         def duration = currentBuild.durationString.replace(' and counting', '')
                         
@@ -111,15 +247,17 @@ pipeline {
                             ${env.BUILD_URL}
                             """
                         )
+                        archiveArtifacts artifacts: '**/build/reports/**/*', allowEmptyArchive: true
+                        junit '**/test-results/**/*.xml'
                     } catch (Exception e) {
-                        echo "Failed to send notification: ${e.message}"
+                        echo "Post-build actions failed: ${e.message}"
                     }
                 }
             }
         }
         
         cleanup {
-            node {
+            node('master') {
                 cleanWs()
             }
         }
