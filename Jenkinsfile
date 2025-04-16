@@ -21,41 +21,25 @@ pipeline {
     }
 
     stages {
-       stage('Checkout Code') {
+      stage('Checkout Code') {
     agent any
     steps {
         cleanWs()
         script {
             try {
-                // Initialize git directory first
-                sh 'git init'
-                
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: "*/${env.GIT_BRANCH}"]],
-                    extensions: [
-                        [$class: 'CleanBeforeCheckout'],
-                        [$class: 'CloneOption', 
-                         shallow: true, 
-                         depth: 1, 
-                         noTags: false,
-                         timeout: 30]
-                    ],
-                    userRemoteConfigs: [[
-                        credentialsId: 'github-token',
-                        url: "${env.GIT_URL}",
-                        timeout: 30
-                    ]],
-                    doGenerateSubmoduleConfigurations: false,
-                    submoduleCfg: []
-                ])
-                
-                // Verify checkout was successful
-                sh '''
-                    git branch -vv
-                    git remote -v
-                    ls -la
-                '''
+                withCredentials([usernamePassword(credentialsId: 'github-token', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                    // Initialize git and clone manually using shell commands
+                    sh """
+                        git init
+                        git config --global http.sslVerify false
+                        git remote add origin https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Weciim/erp-p2m-project.git
+                        git fetch --depth 1 origin ${env.GIT_BRANCH}
+                        git checkout FETCH_HEAD
+                        git branch -vv
+                        git remote -v
+                        ls -la
+                    """
+                }
             } catch (Exception e) {
                 error("Checkout failed: ${e.message}")
             }
