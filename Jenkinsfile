@@ -1,17 +1,5 @@
 pipeline {
-    agent {
-    docker {
-        image 'node:20.10-alpine'
-        args '''
-            -u root 
-            -v "$WORKSPACE:$WORKSPACE" 
-            -w "$WORKSPACE" 
-            -v /var/run/docker.sock:/var/run/docker.sock
-            --mount type=bind,source="$WORKSPACE",target="$WORKSPACE",consistency=cached
-        '''
-        reuseNode true
-        }
-    }
+    agent none
     
     environment {
         // Registry config
