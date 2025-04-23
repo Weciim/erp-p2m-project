@@ -43,6 +43,8 @@ pipeline {
                                 git remote -v
                                 ls -la
                             """
+                            env.GIT_COMMIT_HASH = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                            echo "Commit hash: ${env.GIT_COMMIT_HASH}"
                         }
                     } catch (Exception e) {
                         error("Checkout failed: ${e.message}")
