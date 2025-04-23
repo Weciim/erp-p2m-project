@@ -10,8 +10,8 @@ pipeline {
             --mount type=bind,source="$WORKSPACE",target="$WORKSPACE",consistency=cached
         '''
         reuseNode true
+        }
     }
-}
     
     environment {
         // Registry config
