@@ -21,31 +21,34 @@ pipeline {
     }
 
     stages {
-      stage('Checkout Code') {
-    agent any
-    steps {
-        cleanWs()
-        script {
-            try {
-                withCredentials([usernamePassword(credentialsId: 'github-token', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
-                    // Initialize git and clone manually using shell commands
-                    sh """
-                        git init
-                        git config --global http.sslVerify false
-                        git remote add origin https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Weciim/erp-p2m-project.git
-                        git fetch --depth 1 origin ${env.GIT_BRANCH}
-                        git checkout FETCH_HEAD
-                        git branch -vv
-                        git remote -v
-                        ls -la
-                    """
+        stage('Checkout Code') {
+            agent any
+            steps {
+                // Disable the automatic SCM checkout
+                checkout([$class: 'GitSCM', branches: [], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: []])
+                
+                cleanWs()
+                script {
+                    try {
+                        withCredentials([usernamePassword(credentialsId: 'github-token', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                            // Initialize git and clone manually using shell commands
+                            sh """
+                                git init
+                                git config --global http.sslVerify false
+                                git remote add origin https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Weciim/erp-p2m-project.git
+                                git fetch --depth 1 origin ${env.GIT_BRANCH}
+                                git checkout FETCH_HEAD
+                                git branch -vv
+                                git remote -v
+                                ls -la
+                            """
+                        }
+                    } catch (Exception e) {
+                        error("Checkout failed: ${e.message}")
+                    }
                 }
-            } catch (Exception e) {
-                error("Checkout failed: ${e.message}")
             }
         }
-    }
-}
 
         // Stage 2: Build and Deploy in Docker container
         stage('Build and Deploy') {
