@@ -27,33 +27,25 @@ pipeline {
     stages {
         stage('Checkout Code') {
             agent any
-            steps {
-                cleanWs()
-                script {
-                    try {
-                        withCredentials([usernamePassword(credentialsId: 'github-token', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
-                            // Initialize git and clone manually using shell commands
-                            sh """
-                                git init
-                                git config --global http.sslVerify false
-                                git remote add origin https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Weciim/erp-p2m-project.git
-                                git fetch --depth 1 origin ${env.GIT_BRANCH}
-                                git checkout FETCH_HEAD
-                                git branch -vv
-                                git remote -v
-                                ls -la
-                            """
-                            
-                            // Capture the commit hash early and store it
-                            env.GIT_COMMIT_HASH = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                            echo "Commit hash: ${env.GIT_COMMIT_HASH}"
-                        }
-                    } catch (Exception e) {
-                        error("Checkout failed: ${e.message}")
+                steps {
+                    cleanWs()
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: env.GIT_BRANCH]],
+                        extensions: [[
+                            $class: 'RelativeTargetDirectory',
+                            relativeTargetDir: '.'
+                        ]],
+                        userRemoteConfigs: [[
+                            credentialsId: 'github-token',
+                            url: env.GIT_URL
+                        ]]
+                    ])
+                    script {
+                        env.GIT_COMMIT_HASH = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
                     }
                 }
             }
-        }
 
         // Stage 2: Build and Deploy in Docker container
         stage('Build and Deploy') {
@@ -103,7 +95,7 @@ pipeline {
                             sh 'mkdir -p erp/.npm_cache backend/.npm_cache'
                             
                             dir('erp') {
-                                sh "ls -la"
+                                 sh "ls -la"
                                 // Check if package.json exists
                                 sh "[ -f package.json ] && echo 'Package.json exists' || echo 'Package.json not found'"
                                 // Run npm with more detailed logs
