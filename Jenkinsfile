@@ -20,13 +20,14 @@ pipeline {
         NPM_CMD = 'npm --no-fund --no-audit'
     }
 
+    options {
+        skipDefaultCheckout true  // Skip the default checkout
+    }
+
     stages {
         stage('Checkout Code') {
             agent any
             steps {
-                // Disable the automatic SCM checkout
-                checkout([$class: 'GitSCM', branches: [], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: []])
-                
                 cleanWs()
                 script {
                     try {
@@ -223,40 +224,39 @@ pipeline {
                     }
                 }
             }
-        }
-    }
-
-    post {
-        always {
-            script {
-                // Clean up port forwarding
-                sh 'pkill -f "kubectl port-forward" || true'
-                
-                // Notification with build info
-                def duration = currentBuild.durationString.replace(' and counting', '')
-                def commit = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                
-                slackSend(
-                    channel: '#erp-deployments',
-                    color: currentBuild.currentResult == 'SUCCESS' ? 'good' : 'danger',
-                    message: """
-                    *${env.JOB_NAME}* #${env.BUILD_NUMBER}
-                    Result: ${currentBuild.currentResult}
-                    Branch: ${env.GIT_BRANCH}
-                    Commit: ${commit}
-                    Duration: ${duration}
-                    ${env.BUILD_URL}
-                    """
-                )
-                
-                // Archive important artifacts
-                archiveArtifacts artifacts: '**/build/reports/**/*', allowEmptyArchive: true
-                junit '**/test-results/**/*.xml'
+            
+            // Move post actions inside an agent context
+            post {
+                always {
+                    script {
+                        // Clean up port forwarding
+                        sh 'pkill -f "kubectl port-forward" || true'
+                        
+                        // Notification with build info
+                        def duration = currentBuild.durationString.replace(' and counting', '')
+                        def commit = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                        
+                        slackSend(
+                            channel: '#erp-deployments',
+                            color: currentBuild.currentResult == 'SUCCESS' ? 'good' : 'danger',
+                            message: """
+                            *${env.JOB_NAME}* #${env.BUILD_NUMBER}
+                            Result: ${currentBuild.currentResult}
+                            Branch: ${env.GIT_BRANCH}
+                            Commit: ${commit}
+                            Duration: ${duration}
+                            ${env.BUILD_URL}
+                            """
+                        )
+                        
+                        // Archive important artifacts
+                        archiveArtifacts artifacts: '**/build/reports/**/*', allowEmptyArchive: true
+                        junit '**/test-results/**/*.xml'
+                    }
+                    
+                    cleanWs()
+                }
             }
-        }
-        
-        cleanup {
-            cleanWs()
         }
     }
 }
