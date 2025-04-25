@@ -35,15 +35,15 @@ pipeline {
             parallel {
                 stage('Frontend Dependencies') {
                     steps {
-                        sh """
-                            docker run --rm -v "${WORKSPACE}/erp:/app" -w /app ${NODE_IMAGE} sh -c '
-                            if [ -f package.json ]; then
-                                ${NPM_CMD} ci || ${NPM_CMD} install
-                            else
-                                echo "Frontend package.json not found" && exit 1
-                            fi
-                            '
-                        """
+                        dir('frontend') {
+                        script {
+                           if (fileExists('package.json')) {
+                             sh 'npm install'
+                            } else {
+                              error 'Frontend package.json not found'
+                            }
+            }
+        }
                     }
                 }
 
