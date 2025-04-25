@@ -28,17 +28,31 @@ pipeline {
                         returnStdout: true
                     ).trim()
                     
-                    // Verify files exist at correct paths
-                    def frontendExists = fileExists('erp/package.json')
-                    def backendExists = fileExists('backend/package.json')
+                    // Debug: Show workspace structure
+                    sh 'ls -la'
                     
-                    if (!frontendExists || !backendExists) {
-                        error("""
-                            Missing package.json files!
-                            Frontend exists: ${frontendExists} at ${WORKSPACE}/erp/package.json
-                            Backend exists: ${backendExists} at ${WORKSPACE}/backend/package.json
-                        """)
+                    // Verify files exist at correct paths with absolute paths
+                    def frontendPath = "${WORKSPACE}/erp/package.json"
+                    def backendPath = "${WORKSPACE}/backend/package.json"
+                    
+                    if (!fileExists(frontendPath)) {
+                        error("ERROR: Frontend package.json not found at ${frontendPath}")
                     }
+                    
+                    if (!fileExists(backendPath)) {
+                        error("ERROR: Backend package.json not found at ${backendPath}")
+                    }
+                    
+                    // Verify Docker can see the files
+                    sh """
+                        docker run --rm -v ${WORKSPACE}:/workspace -w /workspace ${NODE_IMAGE} \
+                        sh -c '[ -f /workspace/erp/package.json ] && echo "Frontend package.json exists" || echo "Frontend package.json missing"'
+                    """
+                    
+                    sh """
+                        docker run --rm -v ${WORKSPACE}:/workspace -w /workspace ${NODE_IMAGE} \
+                        sh -c '[ -f /workspace/backend/package.json ] && echo "Backend package.json exists" || echo "Backend package.json missing"'
+                    """
                 }
             }
         }
@@ -46,25 +60,28 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 script {
-                    // Run installations sequentially for better error visibility
+                    // Frontend installation with absolute paths
                     try {
-                        dir('erp') {
-                            sh """
-                                docker run --rm -v "${WORKSPACE}/erp:/app" -w /app ${NODE_IMAGE} \
-                                sh -c '${NPM_CMD} install'
-                            """
-                        }
+                        sh """
+                            docker run --rm \
+                            -v ${WORKSPACE}/erp:/frontend \
+                            -w /frontend \
+                            ${NODE_IMAGE} \
+                            ${NPM_CMD} install
+                        """
                     } catch (Exception e) {
                         error("Frontend dependency installation failed: ${e.message}")
                     }
                     
+                    // Backend installation with absolute paths
                     try {
-                        dir('backend') {
-                            sh """
-                                docker run --rm -v "${WORKSPACE}/backend:/app" -w /app ${NODE_IMAGE} \
-                                sh -c '${NPM_CMD} install'
-                            """
-                        }
+                        sh """
+                            docker run --rm \
+                            -v ${WORKSPACE}/backend:/backend \
+                            -w /backend \
+                            ${NODE_IMAGE} \
+                            ${NPM_CMD} install
+                        """
                     } catch (Exception e) {
                         error("Backend dependency installation failed: ${e.message}")
                     }
@@ -76,18 +93,19 @@ pipeline {
             parallel {
                 stage('Frontend Tests') {
                     steps {
-                        dir('erp') {
-                            script {
-                                try {
-                                    sh """
-                                        docker run --rm -v "${WORKSPACE}/erp:/app" -w /app ${NODE_IMAGE} \
-                                        sh -c '${NPM_CMD} run test:ci -- --ci --reporters=default --reporters=jest-junit'
-                                    """
-                                    junit 'junit.xml'
-                                } catch (Exception e) {
-                                    echo "Frontend tests failed: ${e.message}"
-                                    currentBuild.result = 'UNSTABLE'
-                                }
+                        script {
+                            try {
+                                sh """
+                                    docker run --rm \
+                                    -v ${WORKSPACE}/erp:/frontend \
+                                    -w /frontend \
+                                    ${NODE_IMAGE} \
+                                    ${NPM_CMD} run test:ci -- --ci --reporters=default --reporters=jest-junit
+                                """
+                                junit 'erp/junit.xml'
+                            } catch (Exception e) {
+                                echo "Frontend tests failed: ${e.message}"
+                                currentBuild.result = 'UNSTABLE'
                             }
                         }
                     }
@@ -95,18 +113,19 @@ pipeline {
 
                 stage('Backend Tests') {
                     steps {
-                        dir('backend') {
-                            script {
-                                try {
-                                    sh """
-                                        docker run --rm -v "${WORKSPACE}/backend:/app" -w /app ${NODE_IMAGE} \
-                                        sh -c '${NPM_CMD} run test:ci -- --ci --detectOpenHandles --reporters=default --reporters=jest-junit'
-                                    """
-                                    junit 'junit.xml'
-                                } catch (Exception e) {
-                                    echo "Backend tests failed: ${e.message}"
-                                    currentBuild.result = 'UNSTABLE'
-                                }
+                        script {
+                            try {
+                                sh """
+                                    docker run --rm \
+                                    -v ${WORKSPACE}/backend:/backend \
+                                    -w /backend \
+                                    ${NODE_IMAGE} \
+                                    ${NPM_CMD} run test:ci -- --ci --detectOpenHandles --reporters=default --reporters=jest-junit
+                                """
+                                junit 'backend/junit.xml'
+                            } catch (Exception e) {
+                                echo "Backend tests failed: ${e.message}"
+                                currentBuild.result = 'UNSTABLE'
                             }
                         }
                     }
@@ -118,17 +137,18 @@ pipeline {
             parallel {
                 stage('Build Frontend') {
                     steps {
-                        dir('erp') {
-                            script {
-                                try {
-                                    sh """
-                                        docker run --rm -v "${WORKSPACE}/erp:/app" -w /app ${NODE_IMAGE} \
-                                        sh -c '${NPM_CMD} run build'
-                                    """
-                                    archiveArtifacts artifacts: 'build/**/*'
-                                } catch (Exception e) {
-                                    error("Frontend build failed: ${e.message}")
-                                }
+                        script {
+                            try {
+                                sh """
+                                    docker run --rm \
+                                    -v ${WORKSPACE}/erp:/frontend \
+                                    -w /frontend \
+                                    ${NODE_IMAGE} \
+                                    ${NPM_CMD} run build
+                                """
+                                archiveArtifacts artifacts: 'erp/build/**/*'
+                            } catch (Exception e) {
+                                error("Frontend build failed: ${e.message}")
                             }
                         }
                     }
@@ -136,17 +156,18 @@ pipeline {
 
                 stage('Build Backend') {
                     steps {
-                        dir('backend') {
-                            script {
-                                try {
-                                    sh """
-                                        docker run --rm -v "${WORKSPACE}/backend:/app" -w /app ${NODE_IMAGE} \
-                                        sh -c '${NPM_CMD} run build'
-                                    """
-                                    archiveArtifacts artifacts: 'dist/**/*'
-                                } catch (Exception e) {
-                                    error("Backend build failed: ${e.message}")
-                                }
+                        script {
+                            try {
+                                sh """
+                                    docker run --rm \
+                                    -v ${WORKSPACE}/backend:/backend \
+                                    -w /backend \
+                                    ${NODE_IMAGE} \
+                                    ${NPM_CMD} run build
+                                """
+                                archiveArtifacts artifacts: 'backend/dist/**/*'
+                            } catch (Exception e) {
+                                error("Backend build failed: ${e.message}")
                             }
                         }
                     }
@@ -158,14 +179,6 @@ pipeline {
             steps {
                 script {
                     try {
-                        // Verify Dockerfiles exist
-                        if (!fileExists('erp/Dockerfile.prod')) {
-                            error("Frontend Dockerfile.prod not found")
-                        }
-                        if (!fileExists('backend/Dockerfile.prod')) {
-                            error("Backend Dockerfile.prod not found")
-                        }
-
                         // Build frontend image
                         dir('erp') {
                             sh """
