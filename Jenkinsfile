@@ -15,6 +15,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                sh 'ls -R'
                 cleanWs()
                 checkout([
                     $class: 'GitSCM',
@@ -35,15 +36,15 @@ pipeline {
             parallel {
                 stage('Frontend Dependencies') {
                     steps {
-                        dir('frontend') {
-                        script {
-                           if (fileExists('package.json')) {
-                             sh 'npm install'
-                            } else {
-                              error 'Frontend package.json not found'
-                            }
-            }
-        }
+                        sh """
+                            docker run --rm -v "${WORKSPACE}/erp:/app" -w /app ${NODE_IMAGE} sh -c '
+                            if [ -f package.json ]; then
+                                ${NPM_CMD} ci || ${NPM_CMD} install
+                            else
+                                echo "Frontend package.json not found" && exit 1
+                            fi
+                            '
+                        """
                     }
                 }
 
