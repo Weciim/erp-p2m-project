@@ -2,20 +2,26 @@ pipeline {
     agent any
     
     environment {
+        // Git config
         GIT_URL = 'https://github.com/Weciim/erp-p2m-project.git'
         GIT_BRANCH = 'finance-module'
         
+        // Tools config
         NPM_CMD = 'npm --no-fund --no-audit'
         
+        // Docker image names and config
         FRONTEND_IMAGE_NAME = "erp-frontend:${env.BUILD_NUMBER}"
         BACKEND_IMAGE_NAME = "erp-backend:${env.BUILD_NUMBER}"
+        NODE_IMAGE = 'node:20.10-alpine'
     }
     
     stages {
         stage('Checkout') {
             steps {
+                // Clean workspace before checkout
                 cleanWs()
                 
+                // Checkout code from repository
                 checkout([
                     $class: 'GitSCM',
                     branches: [[name: env.GIT_BRANCH]],
@@ -25,9 +31,13 @@ pipeline {
                     ]]
                 ])
                 
+                // Store git commit hash for later use
                 script {
                     env.GIT_COMMIT_HASH = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
                 }
+                
+                // Verify the checkout
+                sh 'ls -la'
             }
         }
         
@@ -35,21 +45,25 @@ pipeline {
             parallel {
                 stage('Frontend Dependencies') {
                     steps {
-                        dir('erp') {
-                            sh '[ -f package.json ] || (echo "Frontend package.json not found" && exit 1)'
-                            
-                            sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
-                        }
+                        // Use Docker to run npm commands
+                        sh """
+                            docker run --rm -v "\$(pwd)/erp:/app" -w /app ${NODE_IMAGE} sh -c '
+                            [ -f package.json ] || (echo "Frontend package.json not found" && exit 1)
+                            ${NPM_CMD} ci || ${NPM_CMD} install
+                            '
+                        """
                     }
                 }
                 
                 stage('Backend Dependencies') {
                     steps {
-                        dir('backend') {
-                            sh '[ -f package.json ] || (echo "Backend package.json not found" && exit 1)'
-                            
-                            sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
-                        }
+                        // Use Docker to run npm commands
+                        sh """
+                            docker run --rm -v "\$(pwd)/backend:/app" -w /app ${NODE_IMAGE} sh -c '
+                            [ -f package.json ] || (echo "Backend package.json not found" && exit 1)
+                            ${NPM_CMD} ci || ${NPM_CMD} install
+                            '
+                        """
                     }
                 }
             }
@@ -59,20 +73,34 @@ pipeline {
             parallel {
                 stage('Frontend Tests') {
                     steps {
-                        dir('erp') {
-                            script {
-                                try {
-                                    sh '[ -f package.json ] && (grep -q "lint" package.json && ${env.NPM_CMD} run lint || echo "No lint script found")'
+                        script {
+                            try {
+                                // Use Docker for running tests
+                                sh """
+                                    docker run --rm -v "\$(pwd)/erp:/app" -w /app ${NODE_IMAGE} sh -c '
+                                    # Run linting if script exists
+                                    if grep -q "lint" package.json; then
+                                        ${NPM_CMD} run lint || echo "Linting had issues but continuing"
+                                    else
+                                        echo "No lint script found"
+                                    fi
                                     
-                                    sh "${env.NPM_CMD} run test:ci -- --ci --reporters=default --reporters=jest-junit || (echo 'Tests failed but continuing' && exit 0)"
+                                    # Run tests with JUnit reporter
+                                    ${NPM_CMD} run test:ci -- --ci --reporters=default --reporters=jest-junit || echo "Tests failed but continuing"
                                     
-                                    sh "npx audit-ci --config .auditci.json || echo 'Audit warnings found'"
-                                } catch (Exception e) {
-                                    echo "Frontend test stage had issues: ${e.message}"
-                                    currentBuild.result = 'UNSTABLE'
-                                }
+                                    # Security audit if available
+                                    if [ -f .auditci.json ]; then
+                                        npx audit-ci --config .auditci.json || echo "Audit warnings found"
+                                    fi
+                                    '
+                                """
                                 
-                                junit allowEmptyResults: true, testResults: '**/junit.xml'
+                                // Collect test results if they exist
+                                sh "test -f erp/junit.xml && echo 'Test results found' || echo 'No test results found'"
+                                junit allowEmptyResults: true, testResults: 'erp/junit.xml'
+                            } catch (Exception e) {
+                                echo "Frontend test stage had issues: ${e.message}"
+                                currentBuild.result = 'UNSTABLE'
                             }
                         }
                     }
@@ -80,18 +108,29 @@ pipeline {
                 
                 stage('Backend Tests') {
                     steps {
-                        dir('backend') {
-                            script {
-                                try {
-                                    sh '[ -f package.json ] && (grep -q "lint" package.json && ${env.NPM_CMD} run lint || echo "No lint script found")'
+                        script {
+                            try {
+                                // Use Docker for running tests
+                                sh """
+                                    docker run --rm -v "\$(pwd)/backend:/app" -w /app ${NODE_IMAGE} sh -c '
+                                    # Run linting if script exists
+                                    if grep -q "lint" package.json; then
+                                        ${NPM_CMD} run lint || echo "Linting had issues but continuing"
+                                    else
+                                        echo "No lint script found"
+                                    fi
                                     
-                                    sh "${env.NPM_CMD} run test:ci -- --ci --detectOpenHandles --reporters=default --reporters=jest-junit || (echo 'Tests failed but continuing' && exit 0)"
-                                } catch (Exception e) {
-                                    echo "Backend test stage had issues: ${e.message}"
-                                    currentBuild.result = 'UNSTABLE'
-                                }
+                                    # Run tests with JUnit reporter
+                                    ${NPM_CMD} run test:ci -- --ci --detectOpenHandles --reporters=default --reporters=jest-junit || echo "Tests failed but continuing"
+                                    '
+                                """
                                 
-                                junit allowEmptyResults: true, testResults: '**/junit.xml'
+                                // Collect test results if they exist
+                                sh "test -f backend/junit.xml && echo 'Test results found' || echo 'No test results found'"
+                                junit allowEmptyResults: true, testResults: 'backend/junit.xml'
+                            } catch (Exception e) {
+                                echo "Backend test stage had issues: ${e.message}"
+                                currentBuild.result = 'UNSTABLE'
                             }
                         }
                     }
@@ -103,17 +142,20 @@ pipeline {
             parallel {
                 stage('Build Frontend') {
                     steps {
-                        dir('erp') {
-                            script {
-                                try {
-                                    // Build frontend application
-                                    sh "${env.NPM_CMD} run build"
-                                    
-                                    // Archive build artifacts
-                                    archiveArtifacts artifacts: 'build/**/*', allowEmptyArchive: true
-                                } catch (Exception e) {
-                                    error("Frontend build failed: ${e.message}")
-                                }
+                        script {
+                            try {
+                                // Use Docker to build frontend
+                                sh """
+                                    docker run --rm -v "\$(pwd)/erp:/app" -w /app ${NODE_IMAGE} sh -c '
+                                    ${NPM_CMD} run build
+                                    '
+                                """
+                                
+                                // Check if build directory exists and archive artifacts
+                                sh "test -d erp/build && echo 'Build directory found' || echo 'No build directory found'"
+                                archiveArtifacts artifacts: 'erp/build/**/*', allowEmptyArchive: true
+                            } catch (Exception e) {
+                                error("Frontend build failed: ${e.message}")
                             }
                         }
                     }
@@ -121,17 +163,20 @@ pipeline {
                 
                 stage('Build Backend') {
                     steps {
-                        dir('backend') {
-                            script {
-                                try {
-                                    // Build backend application
-                                    sh "${env.NPM_CMD} run build"
-                                    
-                                    // Archive build artifacts
-                                    archiveArtifacts artifacts: 'dist/**/*', allowEmptyArchive: true
-                                } catch (Exception e) {
-                                    error("Backend build failed: ${e.message}")
-                                }
+                        script {
+                            try {
+                                // Use Docker to build backend
+                                sh """
+                                    docker run --rm -v "\$(pwd)/backend:/app" -w /app ${NODE_IMAGE} sh -c '
+                                    ${NPM_CMD} run build
+                                    '
+                                """
+                                
+                                // Check if dist directory exists and archive artifacts
+                                sh "test -d backend/dist && echo 'Dist directory found' || (test -d backend/build && echo 'Build directory found') || echo 'No build directory found'"
+                                archiveArtifacts artifacts: 'backend/dist/**/*,backend/build/**/*', allowEmptyArchive: true
+                            } catch (Exception e) {
+                                error("Backend build failed: ${e.message}")
                             }
                         }
                     }
@@ -143,6 +188,13 @@ pipeline {
             steps {
                 script {
                     try {
+                        // Check if Docker is available
+                        sh "docker --version || (echo 'Docker not found' && exit 1)"
+                        
+                        // Verify Dockerfiles exist
+                        sh "test -f erp/Dockerfile.prod || (echo 'Frontend Dockerfile not found' && exit 1)"
+                        sh "test -f backend/Dockerfile.prod || (echo 'Backend Dockerfile not found' && exit 1)"
+                        
                         // Build frontend Docker image
                         sh """
                             docker build \
@@ -179,9 +231,6 @@ pipeline {
     
     post {
         always {
-            // Clean up workspace
-            cleanWs()
-            
             // Send notifications
             script {
                 def commit = env.GIT_COMMIT_HASH ?: 'unknown'
@@ -204,6 +253,9 @@ pipeline {
                     echo "Failed to send Slack notification: ${e.message}"
                 }
             }
+            
+            // Clean up workspace
+            cleanWs()
         }
         
         success {
