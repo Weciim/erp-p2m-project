@@ -5,8 +5,8 @@ pipeline {
         // Registry config
         DOCKER_REGISTRY = 'ghcr.io'
         DOCKER_IMAGE_PREFIX = 'Weciim'
-        FRONTEND_IMAGE = "erp-frontend:${env.BUILD_NUMBER}"
-        BACKEND_IMAGE = "erp-backend:${env.BUILD_NUMBER}"
+        FRONTEND_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-frontend:${env.BUILD_NUMBER}"
+        BACKEND_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-backend:${env.BUILD_NUMBER}"
         
         // K8s config
         KUBE_NAMESPACE = 'erp-prod'
@@ -27,50 +27,42 @@ pipeline {
     stages {
         stage('Checkout Code') {
             agent any
-                steps {
-                    cleanWs()
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[name: env.GIT_BRANCH]],
-                        extensions: [[
-                            $class: 'RelativeTargetDirectory',
-                            relativeTargetDir: '.'
-                        ]],
-                        userRemoteConfigs: [[
-                            credentialsId: 'github-token',
-                            url: env.GIT_URL
-                        ]]
-                    ])
-                    script {
-                        env.GIT_COMMIT_HASH = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                    }
+            steps {
+                cleanWs()
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: env.GIT_BRANCH]],
+                    extensions: [],
+                    userRemoteConfigs: [[
+                        credentialsId: 'github-token',
+                        url: env.GIT_URL
+                    ]]
+                ])
+                script {
+                    env.GIT_COMMIT_HASH = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
                 }
+                // Verify workspace content after checkout
+                sh 'ls -la'
             }
+        }
 
-        // Stage 2: Build and Deploy in Docker container
         stage('Build and Deploy') {
-            agent {
-                docker {
-                    image 'node:20.10-alpine' 
-                    args '--platform linux/amd64 -u root -v $WORKSPACE:$WORKSPACE -w $WORKSPACE -v /var/run/docker.sock:/var/run/docker.sock'
-                    reuseNode true
-                }
-            }
+            agent any
             environment {
-                // Add container-specific environment variables
+                // Add environment variables
                 DOCKER_BUILDKIT = '1'
                 NODE_ENV = 'production'
             }
             stages {
-                // Setup environment with proper error handling
                 stage('Setup Environment') {
                     steps {
                         script {
                             try {
                                 sh '''
-                                    apk add --no-cache git docker-cli openssh-client
-                                    git --version
+                                    which docker || echo "Docker not found"
                                     docker --version
+                                    which git || echo "Git not found"
+                                    git --version
                                 '''
                             } catch (Exception e) {
                                 error("Environment setup failed: ${e.message}")
@@ -79,7 +71,7 @@ pipeline {
                     }
                 }
 
-                // Check workspace structure and permissions
+                // Debug workspace structure and permissions
                 stage('Debug Workspace') {
                     steps {
                         sh 'pwd && ls -la'
@@ -92,22 +84,21 @@ pipeline {
                 stage('Install Dependencies') {
                     steps {
                         script {
+                            // Create cache directories if they don't exist
                             sh 'mkdir -p erp/.npm_cache backend/.npm_cache'
                             
+                            // Install frontend dependencies
                             dir('erp') {
-                                 sh "ls -la"
-                                // Check if package.json exists
+                                sh "ls -la"
                                 sh "[ -f package.json ] && echo 'Package.json exists' || echo 'Package.json not found'"
-                                // Run npm with more detailed logs
-                                sh "${env.NPM_CMD} ci --prefer-offline --cache .npm_cache --loglevel verbose || ${env.NPM_CMD} install"
+                                sh "${env.NPM_CMD} ci --prefer-offline --cache .npm_cache || ${env.NPM_CMD} install"
                             }
                             
+                            // Install backend dependencies
                             dir('backend') {
                                 sh "ls -la"
-                                // Check if package.json exists
                                 sh "[ -f package.json ] && echo 'Package.json exists' || echo 'Package.json not found'"
-                                // Run npm with more detailed logs
-                                sh "${env.NPM_CMD} ci --prefer-offline --omit=dev --cache .npm_cache --loglevel verbose || ${env.NPM_CMD} install"
+                                sh "${env.NPM_CMD} ci --prefer-offline --omit=dev --cache .npm_cache || ${env.NPM_CMD} install"
                             }
                         }
                     }
@@ -158,19 +149,18 @@ pipeline {
                     steps {
                         script {
                             try {
+                                // No need to pull cache images if they don't exist yet
                                 sh """
                                     docker build \
                                         --build-arg NODE_ENV=production \
                                         -t ${env.FRONTEND_IMAGE} \
                                         -f erp/Dockerfile.prod \
-                                        --cache-from ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_PREFIX}/erp-frontend:latest \
                                         erp/
                                     
                                     docker build \
                                         --build-arg NODE_ENV=production \
                                         -t ${env.BACKEND_IMAGE} \
                                         -f backend/Dockerfile.prod \
-                                        --cache-from ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_PREFIX}/erp-backend:latest \
                                         backend/
                                     
                                     docker images
@@ -191,25 +181,34 @@ pipeline {
                                 sh "which kubectl || (echo 'kubectl not found' && exit 1)"
                                 sh "which minikube || (echo 'minikube not found' && exit 1)"
                                 
+                                // Check minikube status before proceeding
+                                sh "minikube status || (echo 'Minikube not running' && exit 1)"
+                                
                                 // Create namespace if not exists
                                 sh """
-                                    kubectl create namespace ${env.KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - || true
+                                    kubectl create namespace ${env.KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
                                 """
                                 
                                 // Load images into Minikube
                                 sh """
-                                    minikube image load ${env.FRONTEND_IMAGE} || true
-                                    minikube image load ${env.BACKEND_IMAGE} || true
+                                    minikube image load ${env.FRONTEND_IMAGE}
+                                    minikube image load ${env.BACKEND_IMAGE}
                                 """
                                 
                                 // Check if helm is available
                                 sh "which helm || (echo 'helm not found' && exit 1)"
                                 
+                                // Verify helm charts exist
+                                sh """
+                                    [ -d ./charts/frontend ] || (echo 'Frontend chart not found' && exit 1)
+                                    [ -d ./charts/backend ] || (echo 'Backend chart not found' && exit 1)
+                                """
+                                
                                 // Helm deployments with atomic rollback
                                 sh """
                                     helm upgrade --install erp-frontend ./charts/frontend \
                                         --namespace ${env.KUBE_NAMESPACE} \
-                                        --set image.repository=erp-frontend \
+                                        --set image.repository=${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-frontend \
                                         --set image.tag=${env.BUILD_NUMBER} \
                                         --set image.pullPolicy=IfNotPresent \
                                         --wait --atomic --timeout 5m
@@ -218,7 +217,7 @@ pipeline {
                                 sh """
                                     helm upgrade --install erp-backend ./charts/backend \
                                         --namespace ${env.KUBE_NAMESPACE} \
-                                        --set image.repository=erp-backend \
+                                        --set image.repository=${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-backend \
                                         --set image.tag=${env.BUILD_NUMBER} \
                                         --set image.pullPolicy=IfNotPresent \
                                         --wait --atomic --timeout 5m
@@ -248,14 +247,14 @@ pipeline {
                 }
             }
             
-            // Move post actions inside an agent context
+            // Post actions for cleanup and notifications
             post {
                 always {
                     script {
                         // Clean up port forwarding
                         sh 'pkill -f "kubectl port-forward" || true'
                         
-                        // Use the stored commit hash, don't try to run git command
+                        // Use the stored commit hash
                         def commit = env.GIT_COMMIT_HASH ?: 'unknown'
                         def duration = currentBuild.durationString.replace(' and counting', '')
                         
