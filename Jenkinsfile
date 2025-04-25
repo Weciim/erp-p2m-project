@@ -46,7 +46,7 @@ pipeline {
                 stage('Frontend Dependencies') {
                  steps {
                    sh """
-                    docker run --rm -v "${WORKSPACE}/erp:/app" -w /app ${NODE_IMAGE} sh -c '
+                    docker run --rm -v "${WORKSPACE}/erp/"  ${NODE_IMAGE} sh -c '
                     if [ -f package.json ]; then
                         ${NPM_CMD} ci || ${NPM_CMD} install
                     else
@@ -60,7 +60,7 @@ pipeline {
                 stage('Backend Dependencies') {
                  steps {
                    sh """
-                    docker run --rm -v "${WORKSPACE}/backend:/app" -w /app ${NODE_IMAGE} sh -c '
+                    docker run --rm -v "${WORKSPACE}/backend/"  ${NODE_IMAGE} sh -c '
                     if [ -f package.json ]; then
                         ${NPM_CMD} ci || ${NPM_CMD} install
                     else
