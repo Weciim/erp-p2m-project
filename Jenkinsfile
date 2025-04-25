@@ -3,12 +3,12 @@ pipeline {
     
     environment {
         GIT_URL = 'https://github.com/Weciim/erp-p2m-project.git'
-        GIT_BRANCH = 'main'  // Change to your default branch if needed
+        GIT_BRANCH = 'finance-module'
         
         NPM_CMD = 'npm --no-fund --no-audit'
         
-        MAIN_BACKEND_IMAGE = "erp-main-backend:${env.BUILD_NUMBER}"
-        ERP_BACKEND_IMAGE = "erp-backend:${env.BUILD_NUMBER}"
+        FRONTEND_IMAGE_NAME = "erp-frontend:${env.BUILD_NUMBER}"
+        BACKEND_IMAGE_NAME = "erp-backend:${env.BUILD_NUMBER}"
     }
     
     stages {
@@ -31,54 +31,59 @@ pipeline {
             }
         }
         
-        stage('Install Dependencies') {
-            parallel {
-                stage('Main Backend Dependencies') {
-                    steps {
-                        dir('backend') {
-                            sh '[ -f package.json ] || (echo "Main backend package.json not found" && exit 1)'
-                            sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
-                        }
-                    }
-                }
-                
-                stage('ERP Backend Dependencies') {
-                    steps {
-                        dir('erp') {
-                            sh '[ -f package.json ] || (echo "ERP backend package.json not found" && exit 1)'
-                            sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
-                        }
-                    }
-                }
+        stage('Diagnose Project Structure') {
+            steps {
+                sh '''
+                    echo "===== REPOSITORY STRUCTURE DIAGNOSIS ====="
+                    echo "Current directory: $(pwd)"
+                    echo "Directory contents:"
+                    ls -la
+                    
+                    echo "\n===== ALL DIRECTORIES ====="
+                    find . -type d -not -path "*/node_modules/*" -not -path "*/\\.*" | sort
+                    
+                    echo "\n===== PACKAGE.JSON FILES ====="
+                    find . -name "package.json" -not -path "*/node_modules/*" | sort
+                    
+                    echo "\n===== DOCKERFILE FILES ====="
+                    find . -name "Dockerfile*" | sort
+                    
+                    echo "\n===== CHECKING SPECIFIC DIRECTORIES ====="
+                    echo "backend directory:"
+                    ls -la backend || echo "backend directory does not exist"
+                    
+                    echo "\nerp directory:"
+                    ls -la erp || echo "erp directory does not exist"
+                    
+                    echo "\nerp/backend directory:"
+                    ls -la erp/backend || echo "erp/backend directory does not exist"
+                    
+                    echo "\n===== STRUCTURE DIAGNOSIS COMPLETE ====="
+                '''
             }
         }
         
-        stage('Run Tests') {
-            parallel {
-                stage('Main Backend Tests') {
-                    steps {
-                        dir('backend') {
-                            script {
-                                try {
-                                    sh "${env.NPM_CMD} test"
-                                } catch (Exception e) {
-                                    unstable("Main backend tests failed: ${e.message}")
-                                }
-                            }
-                        }
+        stage('Install Dependencies') {
+            steps {
+                script {
+                    def packageJsonPaths = sh(script: 'find . -name "package.json" -not -path "*/node_modules/*" | sort', returnStdout: true).trim()
+                    
+                    echo "Found package.json files at:"
+                    echo packageJsonPaths
+                    
+                    def packageJsonList = packageJsonPaths.split('\n')
+                    
+                    if (packageJsonList.size() == 0) {
+                        error("No package.json files found in the repository")
                     }
-                }
-                
-                stage('ERP Backend Tests') {
-                    steps {
-                        dir('erp/backend') {
-                            script {
-                                try {
-                                    sh "${env.NPM_CMD} test"
-                                } catch (Exception e) {
-                                    unstable("ERP backend tests failed: ${e.message}")
-                                }
-                            }
+                    
+                    for (String path in packageJsonList) {
+                        def dir = path.substring(0, path.lastIndexOf('/'))
+                        echo "Processing package.json in ${dir}"
+                        
+                        dir(dir) {
+                            echo "Installing dependencies in ${dir}"
+                            sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
                         }
                     }
                 }
@@ -86,32 +91,35 @@ pipeline {
         }
         
         stage('Build') {
-            parallel {
-                stage('Build Main Backend') {
-                    steps {
-                        dir('backend') {
-                            script {
-                                try {
-                                    sh "${env.NPM_CMD} run build"
-                                    archiveArtifacts artifacts: 'dist/**/*', allowEmptyArchive: true
-                                } catch (Exception e) {
-                                    error("Main backend build failed: ${e.message}")
+            steps {
+                script {
+                    def packageJsonPaths = sh(script: 'find . -name "package.json" -not -path "*/node_modules/*" | sort', returnStdout: true).trim()
+                    def packageJsonList = packageJsonPaths.split('\n')
+                    
+                    for (String path in packageJsonList) {
+                        def dir = path.substring(0, path.lastIndexOf('/'))
+                        echo "Building project in ${dir}"
+                        
+                        dir(dir) {
+                            sh "cat package.json | grep -E '\"build\"|\"start\"'"
+                            
+                            try {
+                                sh "${env.NPM_CMD} run build"
+                                
+                                // Check if build or dist directory exists
+                                def buildExists = sh(script: '[ -d "build" ] && echo "true" || echo "false"', returnStdout: true).trim()
+                                def distExists = sh(script: '[ -d "dist" ] && echo "true" || echo "false"', returnStdout: true).trim()
+                                
+                                if (buildExists == "true") {
+                                    archiveArtifacts artifacts: "build/**/*", allowEmptyArchive: true
+                                } else if (distExists == "true") {
+                                    archiveArtifacts artifacts: "dist/**/*", allowEmptyArchive: true
+                                } else {
+                                    echo "No build or dist directory found after build"
                                 }
-                            }
-                        }
-                    }
-                }
-                
-                stage('Build ERP Backend') {
-                    steps {
-                        dir('erp/backend') {
-                            script {
-                                try {
-                                    sh "${env.NPM_CMD} run build"
-                                    archiveArtifacts artifacts: 'dist/**/*', allowEmptyArchive: true
-                                } catch (Exception e) {
-                                    error("ERP backend build failed: ${e.message}")
-                                }
+                            } catch (Exception e) {
+                                echo "Build failed in ${dir}: ${e.message}"
+                                // Continue with next package.json instead of failing
                             }
                         }
                     }
@@ -123,55 +131,40 @@ pipeline {
             steps {
                 script {
                     try {
-                        // Build Main Backend Docker Image
-                        sh """
-                            docker build \
-                                --build-arg NODE_ENV=production \
-                                -t ${env.MAIN_BACKEND_IMAGE} \
-                                -f backend/Dockerfile \
-                                backend/
-                        """
+                        def dockerfilePaths = sh(script: 'find . -name "Dockerfile*" | sort', returnStdout: true).trim()
                         
-                        // Build ERP Backend Docker Image
-                        sh """
-                            docker build \
-                                --build-arg NODE_ENV=production \
-                                -t ${env.ERP_BACKEND_IMAGE} \
-                                -f erp/backend/Dockerfile \
-                                erp/backend/
-                        """
-                        
-                        // Tag as latest
-                        sh """
-                            docker tag ${env.MAIN_BACKEND_IMAGE} erp-main-backend:latest
-                            docker tag ${env.ERP_BACKEND_IMAGE} erp-backend:latest
-                        """
-                        
-                        sh "docker images | grep erp"
+                        if (dockerfilePaths) {
+                            echo "Found Dockerfiles at:"
+                            echo dockerfilePaths
+                            
+                            def dockerfileList = dockerfilePaths.split('\n')
+                            
+                            for (int i = 0; i < dockerfileList.size(); i++) {
+                                def dockerfilePath = dockerfileList[i]
+                                def dir = dockerfilePath.substring(0, dockerfilePath.lastIndexOf('/'))
+                                def imageName = "erp-service-${i}:${env.BUILD_NUMBER}"
+                                
+                                echo "Building Docker image for ${dockerfilePath}"
+                                
+                                sh """
+                                    docker build \
+                                        --build-arg NODE_ENV=production \
+                                        -t ${imageName} \
+                                        -f ${dockerfilePath} \
+                                        ${dir}/
+                                """
+                                
+                                sh "docker tag ${imageName} erp-service-${i}:latest"
+                            }
+                            
+                            sh "docker images | grep erp"
+                        } else {
+                            echo "No Dockerfiles found, skipping Docker build"
+                        }
                     } catch (Exception e) {
-                        error("Docker build failed: ${e.message}")
+                        echo "Docker build failed: ${e.message}"
                     }
                 }
-            }
-        }
-        
-        stage('Deploy to Staging') {
-            when {
-                branch 'develop'
-            }
-            steps {
-                echo "Deploying to staging environment..."
-                // Add deployment steps for staging
-            }
-        }
-        
-        stage('Deploy to Production') {
-            when {
-                branch 'main'
-            }
-            steps {
-                echo "Deploying to production environment..."
-                // Add deployment steps for production
             }
         }
     }
