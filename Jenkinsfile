@@ -44,7 +44,7 @@ pipeline {
                 
                 stage('ERP Backend Dependencies') {
                     steps {
-                        dir('erp/backend') {
+                        dir('erp') {
                             sh '[ -f package.json ] || (echo "ERP backend package.json not found" && exit 1)'
                             sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
                         }
