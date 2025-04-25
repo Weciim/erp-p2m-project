@@ -1,141 +1,134 @@
 pipeline {
-    agent none
+    agent any
     
     environment {
-        // Registry config
-        DOCKER_REGISTRY = 'ghcr.io'
-        DOCKER_IMAGE_PREFIX = 'Weciim'
-        FRONTEND_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-frontend:${env.BUILD_NUMBER}"
-        BACKEND_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-backend:${env.BUILD_NUMBER}"
-        
-        // K8s config
-        KUBE_NAMESPACE = 'erp-prod'
-        KUBE_CONTEXT = 'minikube'
-        
-        // Git config
-        GIT_BRANCH = 'finance-module'
         GIT_URL = 'https://github.com/Weciim/erp-p2m-project.git'
+        GIT_BRANCH = 'finance-module'
         
-        // Tools config
         NPM_CMD = 'npm --no-fund --no-audit'
+        
+        FRONTEND_IMAGE_NAME = "erp-frontend:${env.BUILD_NUMBER}"
+        BACKEND_IMAGE_NAME = "erp-backend:${env.BUILD_NUMBER}"
     }
-
-    options {
-        skipDefaultCheckout true  // Skip the default checkout
-    }
-
+    
     stages {
-        stage('Checkout Code') {
-            agent any
+        stage('Checkout') {
             steps {
                 cleanWs()
+                
                 checkout([
                     $class: 'GitSCM',
                     branches: [[name: env.GIT_BRANCH]],
-                    extensions: [],
                     userRemoteConfigs: [[
                         credentialsId: 'github-token',
                         url: env.GIT_URL
                     ]]
                 ])
+                
                 script {
                     env.GIT_COMMIT_HASH = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
                 }
-                // Verify workspace content after checkout
-                sh 'ls -la'
             }
         }
-
-        stage('Build and Deploy') {
-            agent any
-            environment {
-                // Add environment variables
-                DOCKER_BUILDKIT = '1'
-                NODE_ENV = 'production'
+        
+        stage('Install Dependencies') {
+            parallel {
+                stage('Frontend Dependencies') {
+                    steps {
+                        dir('erp') {
+                            sh '[ -f package.json ] || (echo "Frontend package.json not found" && exit 1)'
+                            
+                            sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
+                        }
+                    }
+                }
+                
+                stage('Backend Dependencies') {
+                    steps {
+                        dir('backend') {
+                            sh '[ -f package.json ] || (echo "Backend package.json not found" && exit 1)'
+                            
+                            sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
+                        }
+                    }
+                }
             }
-            stages {
-                stage('Setup Environment') {
+        }
+        
+        stage('Lint & Test') {
+            parallel {
+                stage('Frontend Tests') {
                     steps {
-                        script {
-                            try {
-                                sh '''
-                                    which docker || echo "Docker not found"
-                                    docker --version
-                                    which git || echo "Git not found"
-                                    git --version
-                                '''
-                            } catch (Exception e) {
-                                error("Environment setup failed: ${e.message}")
+                        dir('erp') {
+                            script {
+                                try {
+                                    sh '[ -f package.json ] && (grep -q "lint" package.json && ${env.NPM_CMD} run lint || echo "No lint script found")'
+                                    
+                                    sh "${env.NPM_CMD} run test:ci -- --ci --reporters=default --reporters=jest-junit || (echo 'Tests failed but continuing' && exit 0)"
+                                    
+                                    sh "npx audit-ci --config .auditci.json || echo 'Audit warnings found'"
+                                } catch (Exception e) {
+                                    echo "Frontend test stage had issues: ${e.message}"
+                                    currentBuild.result = 'UNSTABLE'
+                                }
+                                
+                                junit allowEmptyResults: true, testResults: '**/junit.xml'
                             }
                         }
                     }
                 }
-
-                // Debug workspace structure and permissions
-                stage('Debug Workspace') {
+                
+                stage('Backend Tests') {
                     steps {
-                        sh 'pwd && ls -la'
-                        sh 'ls -la erp || echo "erp directory not found"'
-                        sh 'ls -la backend || echo "backend directory not found"'
-                    }
-                }
-
-                // Install dependencies with caching
-                stage('Install Dependencies') {
-                    steps {
-                        script {
-                            // Create cache directories if they don't exist
-                            sh 'mkdir -p erp/.npm_cache backend/.npm_cache'
-                            
-                            // Install frontend dependencies
-                            dir('erp') {
-                                sh "ls -la"
-                                sh "[ -f package.json ] && echo 'Package.json exists' || echo 'Package.json not found'"
-                                sh "${env.NPM_CMD} ci --prefer-offline --cache .npm_cache || ${env.NPM_CMD} install"
-                            }
-                            
-                            // Install backend dependencies
-                            dir('backend') {
-                                sh "ls -la"
-                                sh "[ -f package.json ] && echo 'Package.json exists' || echo 'Package.json not found'"
-                                sh "${env.NPM_CMD} ci --prefer-offline --omit=dev --cache .npm_cache || ${env.NPM_CMD} install"
+                        dir('backend') {
+                            script {
+                                try {
+                                    sh '[ -f package.json ] && (grep -q "lint" package.json && ${env.NPM_CMD} run lint || echo "No lint script found")'
+                                    
+                                    sh "${env.NPM_CMD} run test:ci -- --ci --detectOpenHandles --reporters=default --reporters=jest-junit || (echo 'Tests failed but continuing' && exit 0)"
+                                } catch (Exception e) {
+                                    echo "Backend test stage had issues: ${e.message}"
+                                    currentBuild.result = 'UNSTABLE'
+                                }
+                                
+                                junit allowEmptyResults: true, testResults: '**/junit.xml'
                             }
                         }
                     }
                 }
-
-                // Frontend build with proper test reporting
+            }
+        }
+        
+        stage('Build') {
+            parallel {
                 stage('Build Frontend') {
                     steps {
                         dir('erp') {
                             script {
                                 try {
-                                    sh """
-                                        ${env.NPM_CMD} run test:ci -- --ci --reporters=default --reporters=jest-junit || echo "Tests failed but continuing"
-                                        ${env.NPM_CMD} run build
-                                        npx audit-ci --config .auditci.json || true
-                                    """
-                                    junit allowEmptyResults: true, testResults: '**/junit.xml'
+                                    // Build frontend application
+                                    sh "${env.NPM_CMD} run build"
+                                    
+                                    // Archive build artifacts
+                                    archiveArtifacts artifacts: 'build/**/*', allowEmptyArchive: true
                                 } catch (Exception e) {
-                                    archiveArtifacts artifacts: '**/screenshots/*.png', allowEmptyArchive: true
                                     error("Frontend build failed: ${e.message}")
                                 }
                             }
                         }
                     }
                 }
-
-                // Backend build with proper test reporting
+                
                 stage('Build Backend') {
                     steps {
                         dir('backend') {
                             script {
                                 try {
-                                    sh """
-                                        ${env.NPM_CMD} run test:ci -- --ci --detectOpenHandles --reporters=default --reporters=jest-junit || echo "Tests failed but continuing"
-                                        ${env.NPM_CMD} run build
-                                    """
-                                    junit allowEmptyResults: true, testResults: '**/junit.xml'
+                                    // Build backend application
+                                    sh "${env.NPM_CMD} run build"
+                                    
+                                    // Archive build artifacts
+                                    archiveArtifacts artifacts: 'dist/**/*', allowEmptyArchive: true
                                 } catch (Exception e) {
                                     error("Backend build failed: ${e.message}")
                                 }
@@ -143,146 +136,86 @@ pipeline {
                         }
                     }
                 }
-
-                // Containerization with build caching
-                stage('Build Docker Images') {
-                    steps {
-                        script {
-                            try {
-                                // No need to pull cache images if they don't exist yet
-                                sh """
-                                    docker build \
-                                        --build-arg NODE_ENV=production \
-                                        -t ${env.FRONTEND_IMAGE} \
-                                        -f erp/Dockerfile.prod \
-                                        erp/
-                                    
-                                    docker build \
-                                        --build-arg NODE_ENV=production \
-                                        -t ${env.BACKEND_IMAGE} \
-                                        -f backend/Dockerfile.prod \
-                                        backend/
-                                    
-                                    docker images
-                                """
-                            } catch (Exception e) {
-                                error("Docker build failed: ${e.message}")
-                            }
-                        }
-                    }
-                }
-
-                // Deployment with proper rollback handling
-                stage('Deploy to Kubernetes') {
-                    steps {
-                        script {
-                            try {
-                                // Check if kubectl and minikube are available
-                                sh "which kubectl || (echo 'kubectl not found' && exit 1)"
-                                sh "which minikube || (echo 'minikube not found' && exit 1)"
-                                
-                                // Check minikube status before proceeding
-                                sh "minikube status || (echo 'Minikube not running' && exit 1)"
-                                
-                                // Create namespace if not exists
-                                sh """
-                                    kubectl create namespace ${env.KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-                                """
-                                
-                                // Load images into Minikube
-                                sh """
-                                    minikube image load ${env.FRONTEND_IMAGE}
-                                    minikube image load ${env.BACKEND_IMAGE}
-                                """
-                                
-                                // Check if helm is available
-                                sh "which helm || (echo 'helm not found' && exit 1)"
-                                
-                                // Verify helm charts exist
-                                sh """
-                                    [ -d ./charts/frontend ] || (echo 'Frontend chart not found' && exit 1)
-                                    [ -d ./charts/backend ] || (echo 'Backend chart not found' && exit 1)
-                                """
-                                
-                                // Helm deployments with atomic rollback
-                                sh """
-                                    helm upgrade --install erp-frontend ./charts/frontend \
-                                        --namespace ${env.KUBE_NAMESPACE} \
-                                        --set image.repository=${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-frontend \
-                                        --set image.tag=${env.BUILD_NUMBER} \
-                                        --set image.pullPolicy=IfNotPresent \
-                                        --wait --atomic --timeout 5m
-                                """
-                                
-                                sh """
-                                    helm upgrade --install erp-backend ./charts/backend \
-                                        --namespace ${env.KUBE_NAMESPACE} \
-                                        --set image.repository=${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}/erp-backend \
-                                        --set image.tag=${env.BUILD_NUMBER} \
-                                        --set image.pullPolicy=IfNotPresent \
-                                        --wait --atomic --timeout 5m
-                                """
-                                
-                                // Health checks
-                                sh """
-                                    kubectl rollout status deployment/erp-frontend -n ${env.KUBE_NAMESPACE} --timeout=300s
-                                    kubectl rollout status deployment/erp-backend -n ${env.KUBE_NAMESPACE} --timeout=300s
-                                """
-                                
-                                // Port forwarding with proper process management
-                                sh """
-                                    pkill -f "kubectl port-forward" || true
-                                    nohup kubectl port-forward svc/erp-frontend 9090:80 -n ${env.KUBE_NAMESPACE} > /dev/null 2>&1 &
-                                """
-                            } catch (Exception e) {
-                                // Automatic rollback on failure
-                                sh """
-                                    helm rollback -n ${env.KUBE_NAMESPACE} erp-frontend 0 || true
-                                    helm rollback -n ${env.KUBE_NAMESPACE} erp-backend 0 || true
-                                """
-                                error("Deployment failed: ${e.message}")
-                            }
-                        }
+            }
+        }
+        
+        stage('Build Docker Images') {
+            steps {
+                script {
+                    try {
+                        // Build frontend Docker image
+                        sh """
+                            docker build \
+                                --build-arg NODE_ENV=production \
+                                -t ${env.FRONTEND_IMAGE_NAME} \
+                                -f erp/Dockerfile.prod \
+                                erp/
+                        """
+                        
+                        // Build backend Docker image
+                        sh """
+                            docker build \
+                                --build-arg NODE_ENV=production \
+                                -t ${env.BACKEND_IMAGE_NAME} \
+                                -f backend/Dockerfile.prod \
+                                backend/
+                        """
+                        
+                        // Tag with the latest tag
+                        sh """
+                            docker tag ${env.FRONTEND_IMAGE_NAME} erp-frontend:latest
+                            docker tag ${env.BACKEND_IMAGE_NAME} erp-backend:latest
+                        """
+                        
+                        // List all images
+                        sh "docker images | grep erp"
+                    } catch (Exception e) {
+                        error("Docker build failed: ${e.message}")
                     }
                 }
             }
+        }
+    }
+    
+    post {
+        always {
+            // Clean up workspace
+            cleanWs()
             
-            // Post actions for cleanup and notifications
-            post {
-                always {
-                    script {
-                        // Clean up port forwarding
-                        sh 'pkill -f "kubectl port-forward" || true'
-                        
-                        // Use the stored commit hash
-                        def commit = env.GIT_COMMIT_HASH ?: 'unknown'
-                        def duration = currentBuild.durationString.replace(' and counting', '')
-                        
-                        try {
-                            slackSend(
-                                channel: '#erp-deployments',
-                                color: currentBuild.currentResult == 'SUCCESS' ? 'good' : 'danger',
-                                message: """
-                                *${env.JOB_NAME}* #${env.BUILD_NUMBER}
-                                Result: ${currentBuild.currentResult}
-                                Branch: ${env.GIT_BRANCH}
-                                Commit: ${commit}
-                                Duration: ${duration}
-                                ${env.BUILD_URL}
-                                """
-                            )
-                        } catch (Exception e) {
-                            echo "Failed to send Slack notification: ${e.message}"
-                        }
-                        
-                        // Archive important artifacts
-                        archiveArtifacts artifacts: '**/build/reports/**/*', allowEmptyArchive: true
-                        junit allowEmptyResults: true, testResults: '**/test-results/**/*.xml'
-                    }
-                    
-                    cleanWs()
+            // Send notifications
+            script {
+                def commit = env.GIT_COMMIT_HASH ?: 'unknown'
+                def duration = currentBuild.durationString.replace(' and counting', '')
+                
+                try {
+                    slackSend(
+                        channel: '#erp-ci',
+                        color: currentBuild.currentResult == 'SUCCESS' ? 'good' : 'danger',
+                        message: """
+                        *${env.JOB_NAME}* #${env.BUILD_NUMBER}
+                        Result: ${currentBuild.currentResult}
+                        Branch: ${env.GIT_BRANCH}
+                        Commit: ${commit}
+                        Duration: ${duration}
+                        ${env.BUILD_URL}
+                        """
+                    )
+                } catch (Exception e) {
+                    echo "Failed to send Slack notification: ${e.message}"
                 }
             }
+        }
+        
+        success {
+            echo "CI pipeline completed successfully!"
+        }
+        
+        failure {
+            echo "CI pipeline failed!"
+        }
+        
+        unstable {
+            echo "CI pipeline is unstable! Check test results."
         }
     }
 }
