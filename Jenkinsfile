@@ -42,32 +42,37 @@ pipeline {
         }
         
         stage('Install Dependencies') {
-            parallel {
+             parallel {
                 stage('Frontend Dependencies') {
-                    steps {
-                        // Use Docker to run npm commands
-                        sh """
-                            docker run --rm -v "\$(pwd)/erp:/app" -w /app ${NODE_IMAGE} sh -c '
-                            [ -f package.json ] || (echo "Frontend package.json not found" && exit 1)
-                            ${NPM_CMD} ci || ${NPM_CMD} install
-                            '
-                        """
+                 steps {
+                   sh """
+                    docker run --rm -v "${WORKSPACE}/erp:/app" -w /app ${NODE_IMAGE} sh -c '
+                    if [ -f package.json ]; then
+                        ${NPM_CMD} ci || ${NPM_CMD} install
+                    else
+                        echo "Frontend package.json not found" && exit 1
+                    fi
+                    '
+                    """
                     }
                 }
-                
+
                 stage('Backend Dependencies') {
-                    steps {
-                        // Use Docker to run npm commands
-                        sh """
-                            docker run --rm -v "\$(pwd)/backend:/app" -w /app ${NODE_IMAGE} sh -c '
-                            [ -f package.json ] || (echo "Backend package.json not found" && exit 1)
-                            ${NPM_CMD} ci || ${NPM_CMD} install
-                            '
-                        """
-                    }
+                 steps {
+                   sh """
+                    docker run --rm -v "${WORKSPACE}/backend:/app" -w /app ${NODE_IMAGE} sh -c '
+                    if [ -f package.json ]; then
+                        ${NPM_CMD} ci || ${NPM_CMD} install
+                    else
+                        echo "Backend package.json not found" && exit 1
+                    fi
+                    '
+                """
                 }
             }
-        }
+    }
+}
+
         
         stage('Lint & Test') {
             parallel {
