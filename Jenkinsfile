@@ -15,8 +15,6 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                sh 'ls -R'
-                cleanWs()
                 checkout([
                     $class: 'GitSCM',
                     branches: [[name: env.GIT_BRANCH]],
@@ -32,17 +30,29 @@ pipeline {
             }
         }
 
+        stage('Verify Structure') {
+            steps {
+                script {
+                    // Verify frontend files exist
+                    if (!fileExists('erp/package.json')) {
+                        error("Frontend package.json not found at erp/package.json")
+                    }
+                    
+                    // Verify backend files exist
+                    if (!fileExists('backend/package.json')) {
+                        error("Backend package.json not found at backend/package.json")
+                    }
+                }
+            }
+        }
+
         stage('Install Dependencies') {
             parallel {
                 stage('Frontend Dependencies') {
                     steps {
                         sh """
                             docker run --rm -v "${WORKSPACE}/erp:/app" -w /app ${NODE_IMAGE} sh -c '
-                            if [ -f package.json ]; then
-                                ${NPM_CMD} ci || ${NPM_CMD} install
-                            else
-                                echo "Frontend package.json not found" && exit 1
-                            fi
+                            ${NPM_CMD} ci || ${NPM_CMD} install
                             '
                         """
                     }
@@ -52,11 +62,7 @@ pipeline {
                     steps {
                         sh """
                             docker run --rm -v "${WORKSPACE}/backend:/app" -w /app ${NODE_IMAGE} sh -c '
-                            if [ -f package.json ]; then
-                                ${NPM_CMD} ci || ${NPM_CMD} install
-                            else
-                                echo "Backend package.json not found" && exit 1
-                            fi
+                            ${NPM_CMD} ci || ${NPM_CMD} install
                             '
                         """
                     }
@@ -83,7 +89,6 @@ pipeline {
                                     fi
                                     '
                                 """
-                                sh "test -f erp/junit.xml && echo 'Test results found' || echo 'No test results found'"
                                 junit allowEmptyResults: true, testResults: 'erp/junit.xml'
                             } catch (Exception e) {
                                 echo "Frontend test stage had issues: ${e.message}"
@@ -107,7 +112,6 @@ pipeline {
                                     ${NPM_CMD} run test:ci -- --ci --detectOpenHandles --reporters=default --reporters=jest-junit || echo "Tests failed but continuing"
                                     '
                                 """
-                                sh "test -f backend/junit.xml && echo 'Test results found' || echo 'No test results found'"
                                 junit allowEmptyResults: true, testResults: 'backend/junit.xml'
                             } catch (Exception e) {
                                 echo "Backend test stage had issues: ${e.message}"
@@ -130,7 +134,6 @@ pipeline {
                                     ${NPM_CMD} run build
                                     '
                                 """
-                                sh "test -d erp/build && echo 'Build directory found' || echo 'No build directory found'"
                                 archiveArtifacts artifacts: 'erp/build/**/*', allowEmptyArchive: true
                             } catch (Exception e) {
                                 error("Frontend build failed: ${e.message}")
@@ -148,7 +151,6 @@ pipeline {
                                     ${NPM_CMD} run build
                                     '
                                 """
-                                sh "test -d backend/dist && echo 'Dist directory found' || (test -d backend/build && echo 'Build directory found') || echo 'No build directory found'"
                                 archiveArtifacts artifacts: 'backend/dist/**/*,backend/build/**/*', allowEmptyArchive: true
                             } catch (Exception e) {
                                 error("Backend build failed: ${e.message}")
@@ -164,8 +166,18 @@ pipeline {
                 script {
                     try {
                         sh "docker --version || (echo 'Docker not found' && exit 1)"
-                        sh "test -f erp/Dockerfile.prod || (echo 'Frontend Dockerfile not found' && exit 1)"
-                        sh "test -f backend/Dockerfile.prod || (echo 'Backend Dockerfile not found' && exit 1)"
+                        
+                        dir('erp') {
+                            if (!fileExists('Dockerfile.prod')) {
+                                error("Frontend Dockerfile.prod not found")
+                            }
+                        }
+                        
+                        dir('backend') {
+                            if (!fileExists('Dockerfile.prod')) {
+                                error("Backend Dockerfile.prod not found")
+                            }
+                        }
 
                         sh """
                             docker build \
@@ -187,8 +199,6 @@ pipeline {
                             docker tag ${env.FRONTEND_IMAGE_NAME} erp-frontend:latest
                             docker tag ${env.BACKEND_IMAGE_NAME} erp-backend:latest
                         """
-
-                        sh "docker images | grep erp"
                     } catch (Exception e) {
                         error("Docker build failed: ${e.message}")
                     }
@@ -202,22 +212,15 @@ pipeline {
             script {
                 def commit = env.GIT_COMMIT_HASH ?: 'unknown'
                 def duration = currentBuild.durationString.replace(' and counting', '')
-                try {
-                    slackSend(
-                        channel: '#erp-ci',
-                        color: currentBuild.currentResult == 'SUCCESS' ? 'good' : 'danger',
-                        message: """
-                        *${env.JOB_NAME}* #${env.BUILD_NUMBER}
-                        Result: ${currentBuild.currentResult}
-                        Branch: ${env.GIT_BRANCH}
-                        Commit: ${commit}
-                        Duration: ${duration}
-                        ${env.BUILD_URL}
-                        """
-                    )
-                } catch (Exception e) {
-                    echo "Failed to send Slack notification: ${e.message}"
-                }
+                
+                // Basic console notification since Slack isn't configured
+                echo """
+                    Build Result: ${currentBuild.currentResult}
+                    Branch: ${env.GIT_BRANCH}
+                    Commit: ${commit}
+                    Duration: ${duration}
+                    Build URL: ${env.BUILD_URL}
+                """
             }
             cleanWs()
         }
