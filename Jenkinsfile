@@ -50,8 +50,8 @@ pipeline {
                     // Install frontend dependencies
                     sh """
                         docker run --rm \
-                        -v ${WORKSPACE}/erp:/frontend \
-                        -w /frontend \
+                        -v ${WORKSPACE}/erp:/app \
+                        -w /app \
                         ${NODE_IMAGE} \
                         ${NPM_CMD} install
                     """
@@ -59,8 +59,8 @@ pipeline {
                     // Install backend dependencies
                     sh """
                         docker run --rm \
-                        -v ${WORKSPACE}/backend:/backend \
-                        -w /backend \
+                        -v ${WORKSPACE}/backend:/app \
+                        -w /app \
                         ${NODE_IMAGE} \
                         ${NPM_CMD} install
                     """
@@ -75,8 +75,8 @@ pipeline {
                         script {
                             sh """
                                 docker run --rm \
-                                -v ${WORKSPACE}/erp:/frontend \
-                                -w /frontend \
+                                -v ${WORKSPACE}/erp:/app \
+                                -w /app \
                                 ${NODE_IMAGE} \
                                 ${NPM_CMD} run test:ci
                             """
@@ -89,8 +89,8 @@ pipeline {
                         script {
                             sh """
                                 docker run --rm \
-                                -v ${WORKSPACE}/backend:/backend \
-                                -w /backend \
+                                -v ${WORKSPACE}/backend:/app \
+                                -w /app \
                                 ${NODE_IMAGE} \
                                 ${NPM_CMD} run test:ci
                             """
@@ -107,8 +107,8 @@ pipeline {
                         script {
                             sh """
                                 docker run --rm \
-                                -v ${WORKSPACE}/erp:/frontend \
-                                -w /frontend \
+                                -v ${WORKSPACE}/erp:/app \
+                                -w /app \
                                 ${NODE_IMAGE} \
                                 ${NPM_CMD} run build
                             """
@@ -121,8 +121,8 @@ pipeline {
                         script {
                             sh """
                                 docker run --rm \
-                                -v ${WORKSPACE}/backend:/backend \
-                                -w /backend \
+                                -v ${WORKSPACE}/backend:/app \
+                                -w /app \
                                 ${NODE_IMAGE} \
                                 ${NPM_CMD} run build
                             """
@@ -135,6 +135,14 @@ pipeline {
         stage('Build Docker Images') {
             steps {
                 script {
+                    // Verify Dockerfiles exist
+                    if (!fileExists('erp/Dockerfile.prod')) {
+                        error("Frontend Dockerfile.prod not found")
+                    }
+                    if (!fileExists('backend/Dockerfile.prod')) {
+                        error("Backend Dockerfile.prod not found")
+                    }
+
                     // Build frontend Docker image
                     sh """
                         docker build \
