@@ -45,15 +45,29 @@ pipeline {
         stage('Verify Project Structure') {
             steps {
                 script {
+                    // First check actual project structure
+                    def backendDir = sh(script: 'find . -type d -name "backend" | head -1 || echo "backend"', returnStdout: true).trim()
+                    def frontendDir = sh(script: 'find . -type d -name "erp" | head -1 || echo "erp"', returnStdout: true).trim()
+                    
+                    // Set directories as environment variables for use in other stages
+                    env.BACKEND_DIR = backendDir
+                    env.FRONTEND_DIR = frontendDir
+                    
+                    echo "Using backend directory: ${env.BACKEND_DIR}"
+                    echo "Using frontend directory: ${env.FRONTEND_DIR}"
+                    
+                    // Ensure directories exist
+                    sh "mkdir -p ${env.BACKEND_DIR}"
+                    sh "mkdir -p ${env.FRONTEND_DIR}"
+                    
                     // Check project structure and create package.json if needed
-                    def frontendPackageExists = sh(script: 'test -f erp/package.json && echo "true" || echo "false"', returnStdout: true).trim()
-                    def backendPackageExists = sh(script: 'test -f backend/package.json && echo "true" || echo "false"', returnStdout: true).trim()
+                    def frontendPackageExists = sh(script: "test -f ${env.FRONTEND_DIR}/package.json && echo true || echo false", returnStdout: true).trim()
+                    def backendPackageExists = sh(script: "test -f ${env.BACKEND_DIR}/package.json && echo true || echo false", returnStdout: true).trim()
                     
                     if (frontendPackageExists == 'false') {
                         echo "Frontend package.json not found. Creating a minimal package.json for the build to proceed."
-                        sh '''
-                            mkdir -p erp
-                            cat > erp/package.json << 'EOL'
+                        sh """
+                            cat > ${env.FRONTEND_DIR}/package.json << 'EOL'
 {
   "name": "erp-frontend",
   "version": "1.0.0",
@@ -69,14 +83,13 @@ pipeline {
   "license": "ISC"
 }
 EOL
-                        '''
+                        """
                     }
                     
                     if (backendPackageExists == 'false') {
                         echo "Backend package.json not found. Creating a minimal package.json for the build to proceed."
-                        sh '''
-                            mkdir -p backend
-                            cat > backend/package.json << 'EOL'
+                        sh """
+                            cat > ${env.BACKEND_DIR}/package.json << 'EOL'
 {
   "name": "erp-backend",
   "version": "1.0.0",
@@ -92,38 +105,48 @@ EOL
   "license": "ISC"
 }
 EOL
-                        '''
+                        """
                     }
                     
                     // Check that the dockerfiles exist or create minimal ones
-                    def frontendDockerfileExists = sh(script: 'test -f erp/Dockerfile.prod && echo "true" || echo "false"', returnStdout: true).trim()
-                    def backendDockerfileExists = sh(script: 'test -f backend/Dockerfile.prod && echo "true" || echo "false"', returnStdout: true).trim()
+                    def frontendDockerfileExists = sh(script: "test -f ${env.FRONTEND_DIR}/Dockerfile.prod && echo true || echo false", returnStdout: true).trim()
+                    def backendDockerfileExists = sh(script: "test -f ${env.BACKEND_DIR}/Dockerfile.prod && echo true || echo false", returnStdout: true).trim()
                     
                     if (frontendDockerfileExists == 'false') {
                         echo "Frontend Dockerfile.prod not found. Creating a minimal one."
-                        sh '''
-                            cat > erp/Dockerfile.prod << 'EOL'
+                        sh """
+                            cat > ${env.FRONTEND_DIR}/Dockerfile.prod << 'EOL'
 FROM node:20.10-alpine
 WORKDIR /app
 COPY . .
 RUN npm install
 CMD ["node", "index.js"]
 EOL
-                        '''
+                        """
                     }
                     
                     if (backendDockerfileExists == 'false') {
                         echo "Backend Dockerfile.prod not found. Creating a minimal one."
-                        sh '''
-                            cat > backend/Dockerfile.prod << 'EOL'
+                        sh """
+                            cat > ${env.BACKEND_DIR}/Dockerfile.prod << 'EOL'
 FROM node:20.10-alpine
 WORKDIR /app
 COPY . .
 RUN npm install
 CMD ["node", "index.js"]
 EOL
-                        '''
+                        """
                     }
+                    
+                    // Check permissions and fix if needed
+                    sh """
+                        chmod -R 755 ${env.FRONTEND_DIR}
+                        chmod -R 755 ${env.BACKEND_DIR}
+                    """
+                    
+                    // Verify created files
+                    sh "ls -la ${env.FRONTEND_DIR}/"
+                    sh "ls -la ${env.BACKEND_DIR}/"
                 }
             }
         }
@@ -134,11 +157,13 @@ EOL
                     steps {
                         script {
                             try {
-                                // Use Docker to run npm commands
+                                // Use Docker to run npm commands with absolute paths
                                 sh """
-                                    docker run --rm -v "\$(pwd)/erp:/app" -w /app ${NODE_IMAGE} sh -c '
-                                    ${NPM_CMD} ci || ${NPM_CMD} install
-                                    '
+                                    docker run --rm \
+                                        -v "\$(pwd)/${env.FRONTEND_DIR}:/app" \
+                                        -w /app \
+                                        ${NODE_IMAGE} \
+                                        sh -c 'ls -la && cat package.json && ${NPM_CMD} install'
                                 """
                             } catch (Exception e) {
                                 echo "Warning: Frontend dependencies installation had issues: ${e.message}"
@@ -152,11 +177,13 @@ EOL
                     steps {
                         script {
                             try {
-                                // Use Docker to run npm commands
+                                // Use Docker to run npm commands with absolute paths
                                 sh """
-                                    docker run --rm -v "\$(pwd)/backend:/app" -w /app ${NODE_IMAGE} sh -c '
-                                    ${NPM_CMD} ci || ${NPM_CMD} install
-                                    '
+                                    docker run --rm \
+                                        -v "\$(pwd)/${env.BACKEND_DIR}:/app" \
+                                        -w /app \
+                                        ${NODE_IMAGE} \
+                                        sh -c 'ls -la && cat package.json && ${NPM_CMD} install'
                                 """
                             } catch (Exception e) {
                                 echo "Warning: Backend dependencies installation had issues: ${e.message}"
@@ -176,22 +203,26 @@ EOL
                             try {
                                 // Use Docker for running tests
                                 sh """
-                                    docker run --rm -v "\$(pwd)/erp:/app" -w /app ${NODE_IMAGE} sh -c '
-                                    # Run linting if script exists
-                                    if grep -q "lint" package.json; then
-                                        ${NPM_CMD} run lint || echo "Linting had issues but continuing"
-                                    else
-                                        echo "No lint script found"
-                                    fi
-                                    
-                                    # Run tests
-                                    ${NPM_CMD} run test || echo "Tests failed but continuing"
-                                    '
+                                    docker run --rm \
+                                        -v "\$(pwd)/${env.FRONTEND_DIR}:/app" \
+                                        -w /app \
+                                        ${NODE_IMAGE} \
+                                        sh -c '
+                                        # Run linting if script exists
+                                        if grep -q "lint" package.json; then
+                                            ${NPM_CMD} run lint || echo "Linting had issues but continuing"
+                                        else
+                                            echo "No lint script found"
+                                        fi
+                                        
+                                        # Run tests
+                                        ${NPM_CMD} run test || echo "Tests failed but continuing"
+                                        '
                                 """
                                 
                                 // Collect test results if they exist
-                                sh "test -f erp/junit.xml && echo 'Test results found' || echo 'No test results found'"
-                                junit allowEmptyResults: true, testResults: 'erp/junit.xml'
+                                sh "test -f ${env.FRONTEND_DIR}/junit.xml && echo 'Test results found' || echo 'No test results found'"
+                                junit allowEmptyResults: true, testResults: "${env.FRONTEND_DIR}/junit.xml"
                             } catch (Exception e) {
                                 echo "Frontend test stage had issues: ${e.message}"
                                 unstable(message: "Frontend test stage had issues")
@@ -206,22 +237,26 @@ EOL
                             try {
                                 // Use Docker for running tests
                                 sh """
-                                    docker run --rm -v "\$(pwd)/backend:/app" -w /app ${NODE_IMAGE} sh -c '
-                                    # Run linting if script exists
-                                    if grep -q "lint" package.json; then
-                                        ${NPM_CMD} run lint || echo "Linting had issues but continuing"
-                                    else
-                                        echo "No lint script found"
-                                    fi
-                                    
-                                    # Run tests
-                                    ${NPM_CMD} run test || echo "Tests failed but continuing"
-                                    '
+                                    docker run --rm \
+                                        -v "\$(pwd)/${env.BACKEND_DIR}:/app" \
+                                        -w /app \
+                                        ${NODE_IMAGE} \
+                                        sh -c '
+                                        # Run linting if script exists
+                                        if grep -q "lint" package.json; then
+                                            ${NPM_CMD} run lint || echo "Linting had issues but continuing"
+                                        else
+                                            echo "No lint script found"
+                                        fi
+                                        
+                                        # Run tests
+                                        ${NPM_CMD} run test || echo "Tests failed but continuing"
+                                        '
                                 """
                                 
                                 // Collect test results if they exist
-                                sh "test -f backend/junit.xml && echo 'Test results found' || echo 'No test results found'"
-                                junit allowEmptyResults: true, testResults: 'backend/junit.xml'
+                                sh "test -f ${env.BACKEND_DIR}/junit.xml && echo 'Test results found' || echo 'No test results found'"
+                                junit allowEmptyResults: true, testResults: "${env.BACKEND_DIR}/junit.xml"
                             } catch (Exception e) {
                                 echo "Backend test stage had issues: ${e.message}"
                                 unstable(message: "Backend test stage had issues")
@@ -240,14 +275,16 @@ EOL
                             try {
                                 // Use Docker to build frontend
                                 sh """
-                                    docker run --rm -v "\$(pwd)/erp:/app" -w /app ${NODE_IMAGE} sh -c '
-                                    ${NPM_CMD} run build
-                                    '
+                                    docker run --rm \
+                                        -v "\$(pwd)/${env.FRONTEND_DIR}:/app" \
+                                        -w /app \
+                                        ${NODE_IMAGE} \
+                                        sh -c '${NPM_CMD} run build'
                                 """
                                 
                                 // Check if build directory exists and archive artifacts
-                                sh "test -d erp/build && echo 'Build directory found' || echo 'No build directory found'"
-                                archiveArtifacts artifacts: 'erp/build/**/*', allowEmptyArchive: true
+                                sh "test -d ${env.FRONTEND_DIR}/build && echo 'Build directory found' || echo 'No build directory found'"
+                                archiveArtifacts artifacts: "${env.FRONTEND_DIR}/build/**/*", allowEmptyArchive: true
                             } catch (Exception e) {
                                 echo "Warning: Frontend build had issues: ${e.message}"
                                 unstable(message: "Frontend build had issues")
@@ -262,14 +299,20 @@ EOL
                             try {
                                 // Use Docker to build backend
                                 sh """
-                                    docker run --rm -v "\$(pwd)/backend:/app" -w /app ${NODE_IMAGE} sh -c '
-                                    ${NPM_CMD} run build
-                                    '
+                                    docker run --rm \
+                                        -v "\$(pwd)/${env.BACKEND_DIR}:/app" \
+                                        -w /app \
+                                        ${NODE_IMAGE} \
+                                        sh -c '${NPM_CMD} run build'
                                 """
                                 
                                 // Check if dist directory exists and archive artifacts
-                                sh "test -d backend/dist && echo 'Dist directory found' || (test -d backend/build && echo 'Build directory found') || echo 'No build directory found'"
-                                archiveArtifacts artifacts: 'backend/dist/**/*,backend/build/**/*', allowEmptyArchive: true
+                                sh """
+                                    test -d ${env.BACKEND_DIR}/dist && echo 'Dist directory found' || \
+                                    (test -d ${env.BACKEND_DIR}/build && echo 'Build directory found') || \
+                                    echo 'No build directory found'
+                                """
+                                archiveArtifacts artifacts: "${env.BACKEND_DIR}/dist/**/*,${env.BACKEND_DIR}/build/**/*", allowEmptyArchive: true
                             } catch (Exception e) {
                                 echo "Warning: Backend build had issues: ${e.message}"
                                 unstable(message: "Backend build had issues")
@@ -292,8 +335,8 @@ EOL
                             docker build \
                                 --build-arg NODE_ENV=production \
                                 -t ${env.FRONTEND_IMAGE_NAME} \
-                                -f erp/Dockerfile.prod \
-                                erp/
+                                -f ${env.FRONTEND_DIR}/Dockerfile.prod \
+                                ${env.FRONTEND_DIR}/
                         """
                         
                         // Build backend Docker image
@@ -301,8 +344,8 @@ EOL
                             docker build \
                                 --build-arg NODE_ENV=production \
                                 -t ${env.BACKEND_IMAGE_NAME} \
-                                -f backend/Dockerfile.prod \
-                                backend/
+                                -f ${env.BACKEND_DIR}/Dockerfile.prod \
+                                ${env.BACKEND_DIR}/
                         """
                         
                         // Tag with the latest tag
@@ -331,10 +374,10 @@ EOL
                 
                 try {
                     // Check if slack plugin is installed
-                    def slackInstalled = sh(script: 'jenkins-cli plugin-manager -l | grep slack-notification', returnStatus: true)
+                    def slackInstalled = sh(script: 'which slack-notification || echo "not found"', returnStdout: true)
                     
                     // If slack plugin is installed, send notification
-                    if (slackInstalled == 0) {
+                    if (!slackInstalled.contains('not found')) {
                         slackSend(
                             channel: '#erp-ci',
                             color: currentBuild.currentResult == 'SUCCESS' ? 'good' : 'danger',
