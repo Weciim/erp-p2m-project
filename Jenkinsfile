@@ -55,8 +55,8 @@ pipeline {
                     echo "\nerp directory:"
                     ls -la erp || echo "erp directory does not exist"
                     
-                    echo "\nerp/backend directory:"
-                    ls -la erp/backend || echo "erp/backend directory does not exist"
+                    echo "\nerp/ directory:"
+                    ls -la erp/ || echo "erp/ directory does not exist"
                     
                     echo "\n===== STRUCTURE DIAGNOSIS COMPLETE ====="
                 '''
