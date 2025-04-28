@@ -9,7 +9,9 @@
     "production": "NODE_ENV=production",
     "setup": "node src/setup/setup.js",
     "upgrade": "node src/setup/upgrade.js",
-    "reset": "node src/setup/reset.js"
+    "reset": "node src/setup/reset.js",
+    "build": "echo 'No build step necessary for backend.'"
+
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
