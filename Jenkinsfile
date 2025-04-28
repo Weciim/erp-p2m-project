@@ -78,11 +78,12 @@ pipeline {
                     }
                     
                     for (String path in packageJsonList) {
-                        def dir = path.substring(0, path.lastIndexOf('/'))
-                        echo "Processing package.json in ${dir}"
+                        def dirPath = path.substring(0, path.lastIndexOf('/'))
+                        echo "Processing package.json in ${dirPath}"
                         
-                        dir(dir) {
-                            echo "Installing dependencies in ${dir}"
+                        // Use dir step correctly as a method with a closure
+                        dir(dirPath) {
+                            echo "Installing dependencies in ${dirPath}"
                             sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
                         }
                     }
@@ -97,10 +98,10 @@ pipeline {
                     def packageJsonList = packageJsonPaths.split('\n')
                     
                     for (String path in packageJsonList) {
-                        def dir = path.substring(0, path.lastIndexOf('/'))
-                        echo "Building project in ${dir}"
+                        def dirPath = path.substring(0, path.lastIndexOf('/'))
+                        echo "Building project in ${dirPath}"
                         
-                        dir(dir) {
+                        dir(dirPath) {
                             sh "cat package.json | grep -E '\"build\"|\"start\"'"
                             
                             try {
@@ -118,7 +119,7 @@ pipeline {
                                     echo "No build or dist directory found after build"
                                 }
                             } catch (Exception e) {
-                                echo "Build failed in ${dir}: ${e.message}"
+                                echo "Build failed in ${dirPath}: ${e.message}"
                                 // Continue with next package.json instead of failing
                             }
                         }
@@ -141,7 +142,7 @@ pipeline {
                             
                             for (int i = 0; i < dockerfileList.size(); i++) {
                                 def dockerfilePath = dockerfileList[i]
-                                def dir = dockerfilePath.substring(0, dockerfilePath.lastIndexOf('/'))
+                                def dirPath = dockerfilePath.substring(0, dockerfilePath.lastIndexOf('/'))
                                 def imageName = "erp-service-${i}:${env.BUILD_NUMBER}"
                                 
                                 echo "Building Docker image for ${dockerfilePath}"
@@ -151,7 +152,7 @@ pipeline {
                                         --build-arg NODE_ENV=production \
                                         -t ${imageName} \
                                         -f ${dockerfilePath} \
-                                        ${dir}/
+                                        ${dirPath}/
                                 """
                                 
                                 sh "docker tag ${imageName} erp-service-${i}:latest"
@@ -177,6 +178,17 @@ pipeline {
                 def commit = env.GIT_COMMIT_HASH ?: 'unknown'
                 def duration = currentBuild.durationString.replace(' and counting', '')
                 
+                // Remove Slack notification or comment it out until the plugin is installed
+                echo """
+                    *${env.JOB_NAME}* #${env.BUILD_NUMBER}
+                    Result: ${currentBuild.currentResult}
+                    Branch: ${env.GIT_BRANCH}
+                    Commit: ${commit}
+                    Duration: ${duration}
+                    ${env.BUILD_URL}
+                """
+                
+                /* Uncomment this when Slack plugin is installed
                 try {
                     slackSend(
                         channel: '#erp-ci',
@@ -193,6 +205,7 @@ pipeline {
                 } catch (Exception e) {
                     echo "Failed to send Slack notification: ${e.message}"
                 }
+                */
             }
         }
         
