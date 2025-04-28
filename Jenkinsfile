@@ -1,17 +1,15 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'node:20'  // Use official Node.js 20 image with npm preinstalled
+            args '-v /var/run/docker.sock:/var/run/docker.sock' // If you need to build Docker images later
+        }
+    }
 
     environment {
         GIT_URL = 'https://github.com/Weciim/erp-p2m-project.git'
         GIT_BRANCH = 'finance-module'
-        
         NPM_CMD = 'npm --no-fund --no-audit'
-        
-        FRONTEND_DIR = 'erp' // adjust if needed
-        BACKEND_DIR = 'backend' // adjust if needed
-        
-        FRONTEND_IMAGE_NAME = "erp-frontend:${env.BUILD_NUMBER}"
-        BACKEND_IMAGE_NAME = "erp-backend:${env.BUILD_NUMBER}"
     }
 
     stages {
@@ -33,51 +31,48 @@ pipeline {
         }
 
         stage('Install Dependencies') {
-            steps {
-                script {
-                    dir(env.FRONTEND_DIR) {
-                        echo "Installing frontend dependencies..."
-                        sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
+            parallel {
+                stage('Backend Install') {
+                    steps {
+                        dir('backend') {
+                            sh "${env.NPM_CMD} install"
+                        }
                     }
-                    dir(env.BACKEND_DIR) {
-                        echo "Installing backend dependencies..."
-                        sh "${env.NPM_CMD} ci || ${env.NPM_CMD} install"
+                }
+                stage('Frontend Install') {
+                    steps {
+                        dir('erp') {
+                            sh "${env.NPM_CMD} install"
+                        }
                     }
                 }
             }
         }
 
         stage('Build Projects') {
-            steps {
-                script {
-                    dir(env.FRONTEND_DIR) {
-                        echo "Building frontend..."
-                        sh "${env.NPM_CMD} run build"
+            parallel {
+                stage('Build Backend') {
+                    steps {
+                        dir('backend') {
+                            sh "${env.NPM_CMD} run build"
+                        }
                     }
-                    dir(env.BACKEND_DIR) {
-                        echo "Building backend..."
-                        sh "${env.NPM_CMD} run build"
+                }
+                stage('Build Frontend') {
+                    steps {
+                        dir('erp') {
+                            sh "${env.NPM_CMD} run build"
+                        }
                     }
                 }
             }
         }
-
-        stage('Build Docker Images') {
+        
+        stage('Archive Build Artifacts') {
             steps {
                 script {
-                    echo "Building frontend Docker image..."
-                    sh """
-                        docker build -t ${env.FRONTEND_IMAGE_NAME} -f ${env.FRONTEND_DIR}/Dockerfile ${env.FRONTEND_DIR}
-                        docker tag ${env.FRONTEND_IMAGE_NAME} erp-frontend:latest
-                    """
-
-                    echo "Building backend Docker image..."
-                    sh """
-                        docker build -t ${env.BACKEND_IMAGE_NAME} -f ${env.BACKEND_DIR}/Dockerfile ${env.BACKEND_DIR}
-                        docker tag ${env.BACKEND_IMAGE_NAME} erp-backend:latest
-                    """
-                    
-                    sh "docker images | grep erp"
+                    archiveArtifacts artifacts: 'backend/dist/**', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'erp/build/**', allowEmptyArchive: true
                 }
             }
         }
@@ -89,7 +84,7 @@ pipeline {
             script {
                 def commit = env.GIT_COMMIT_HASH ?: 'unknown'
                 def duration = currentBuild.durationString.replace(' and counting', '')
-
+                
                 echo """
                     *${env.JOB_NAME}* #${env.BUILD_NUMBER}
                     Result: ${currentBuild.currentResult}
@@ -100,13 +95,11 @@ pipeline {
                 """
             }
         }
-
         success {
-            echo "✅ CI pipeline completed successfully!"
+            echo "Build completed successfully!"
         }
-
         failure {
-            echo "❌ CI pipeline failed!"
+            echo "Build failed!"
         }
     }
 }
